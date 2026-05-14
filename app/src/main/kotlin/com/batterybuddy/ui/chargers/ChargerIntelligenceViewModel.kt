@@ -18,11 +18,13 @@ class ChargerIntelligenceViewModel @Inject constructor(
 
     val uiState: StateFlow<ChargerUiState> = repository.getAllChargeSessions()
         .map { sessions ->
-            val validSessions = sessions.filter { it.chargerFingerprint != null && it.endTimestamp != null }
+            val validSessions = sessions.filter { it.chargeSource.name != "NONE" }
             if (validSessions.isEmpty()) {
                 ChargerUiState.Empty
             } else {
-                val stats = validSessions.groupBy { it.chargerFingerprint!! }
+                val stats = validSessions.groupBy { session ->
+                    session.chargerFingerprint ?: "${session.chargeSource.name}|UNCLASSIFIED"
+                }
                     .map { (fingerprint, group) ->
                         calculateChargerStats(fingerprint, group)
                     }
@@ -38,7 +40,11 @@ class ChargerIntelligenceViewModel @Inject constructor(
         )
 
     private fun calculateChargerStats(fingerprint: String, sessions: List<ChargeSession>): ChargerStats {
-        val avgTemp = sessions.mapNotNull { it.peakTemperatureCelsius }.average().toFloat()
+        val avgTemp = sessions.mapNotNull { it.peakTemperatureCelsius }
+            .average()
+            .toFloat()
+            .takeIf { !it.isNaN() }
+            ?: 0f
         val avgWatts = sessions.mapNotNull { session ->
             val wh = session.energyAddedWattHours ?: return@mapNotNull null
             val hours = (session.durationMinutes ?: 0) / 60f
@@ -55,7 +61,9 @@ class ChargerIntelligenceViewModel @Inject constructor(
 
         return ChargerStats(
             fingerprint = fingerprint,
-            label = sessions.first().chargerLabel ?: "Unknown Charger",
+            label = sessions.firstNotNullOfOrNull { it.chargerLabel }
+                ?: if (sessions.any { it.isOpen }) "Active ${sessions.first().chargeSource.name.lowercase()} charger"
+                else "${sessions.first().chargeSource.name.lowercase().replaceFirstChar { it.uppercase() }} charger",
             sessionCount = sessions.size,
             averagePeakTempCelsius = avgTemp,
             averageWatts = avgWatts,

@@ -15,7 +15,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.batterybuddy.data.model.ChargeSession
+import com.batterybuddy.data.model.DischargeEvent
 import com.batterybuddy.data.model.HealthVerdict
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.Icons
 
 @Composable
 fun TrendsScreen(
@@ -36,7 +39,8 @@ fun TrendsScreen(
         ) {
             Text(
                 text = "Health Trends",
-                style = MaterialTheme.typography.headlineMedium
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
             )
             TextButton(onClick = onNavigateToEducation) {
                 Text("Learn Why")
@@ -46,8 +50,16 @@ fun TrendsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         when (val state = uiState) {
-            is TrendsUiState.Loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-            is TrendsUiState.Empty -> Text("No sessions recorded yet. Start charging to see trends.")
+            is TrendsUiState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            is TrendsUiState.Empty -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No sessions recorded yet. Start charging to see trends.")
+                }
+            }
             is TrendsUiState.Content -> TrendsContent(state)
         }
     }
@@ -55,17 +67,147 @@ fun TrendsScreen(
 
 @Composable
 fun TrendsContent(state: TrendsUiState.Content) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             HealthSummaryCard(state)
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        item {
-            Text("Recent Wear Analysis", style = MaterialTheme.typography.titleMedium)
-        }
+        state.groupedHistory.forEach { (date, items) ->
+            item {
+                Text(
+                    text = date,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (date == "Currently Tracking") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                    fontWeight = if (date == "Currently Tracking") FontWeight.ExtraBold else FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                )
+            }
 
-        items(state.sessions.reversed()) { session ->
-            SessionWearItem(session)
+            items(items) { item ->
+                when (item) {
+                    is HistoryItem.Charge -> SessionWearItem(item.session)
+                    is HistoryItem.Discharge -> DischargeEventItem(item.event)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SessionWearItem(session: ChargeSession) {
+    val isOpen = session.isOpen
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isOpen) 4.dp else 2.dp),
+        colors = if (isOpen) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)) 
+                 else CardDefaults.cardColors()
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${session.startPercent}% → ${session.endPercent ?: "Active"}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (isOpen) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        ) {
+                            Text(
+                                "LIVE",
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "${session.chargeSource.name} • ${session.durationMinutes ?: 0} min",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                val cost = session.weightedCycleCost ?: 0f
+                Text(
+                    text = "%.2f Wear Units".format(cost),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = getWearColor(cost)
+                )
+                if (session.hasAbusiveTemp) {
+                    Text(
+                        text = "High Heat Warning",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DischargeEventItem(event: DischargeEvent) {
+    val isOpen = event.isOpen
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isOpen) 4.dp else 1.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isOpen) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${event.startPercent}% → ${event.endPercent ?: "Active"}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (isOpen) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        ) {
+                            Text(
+                                "TRACKING",
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondary
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "Discharge • ${event.durationMinutes ?: 0} min",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+
+            if (event.hasAnomalousBackground) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "High Background Drain",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -116,50 +258,6 @@ fun HealthSummaryCard(state: TrendsUiState.Content) {
                 text = "Estimated Capacity: ${health.currentCapacityMah} mAh / ${health.ratedMah} mAh",
                 style = MaterialTheme.typography.bodySmall
             )
-        }
-    }
-}
-
-@Composable
-fun SessionWearItem(session: ChargeSession) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "${session.startPercent}% → ${session.endPercent}%",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = session.chargeSource.name,
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                val cost = session.weightedCycleCost ?: 0f
-                Text(
-                    text = "%.2f Wear Units".format(cost),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = getWearColor(cost)
-                )
-                if (session.hasAbusiveTemp) {
-                    Text(
-                        text = "High Heat Warning",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
         }
     }
 }

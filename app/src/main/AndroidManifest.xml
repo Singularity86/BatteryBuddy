@@ -17,7 +17,7 @@
         android:allowBackup="true"
         android:label="BatteryTruth"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@style/AppTheme">
 
         <!-- UI entry point — screen implementations added in UI phase -->
         <activity

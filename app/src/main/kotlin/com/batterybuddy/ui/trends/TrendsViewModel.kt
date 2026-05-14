@@ -3,30 +3,59 @@ package com.batterybuddy.ui.trends
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.batterybuddy.data.model.ChargeSession
+import com.batterybuddy.data.model.DischargeEvent
 import com.batterybuddy.data.model.HealthSummary
 import com.batterybuddy.data.repository.BatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
 @HiltViewModel
 class TrendsViewModel @Inject constructor(
-    private val repository: BatteryRepository
+    private val repository: BatteryRepository,
+    private val prefs: com.batterybuddy.data.preferences.UserPreferencesStore
 ) : ViewModel() {
-
-    // Ideally, ratedMah would come from user preferences or a device database.
-    // For now, using a common placeholder like 4500mAh.
-    private val ratedMah = 4500 
 
     val uiState: StateFlow<TrendsUiState> = combine(
         repository.getAllChargeSessions(),
-        flow { emit(repository.computeHealthSummary(ratedMah)) }
-    ) { sessions, health ->
-        if (sessions.isEmpty()) {
+        repository.getAllDischargeEvents(),
+        prefs.ratedMahOverride
+    ) { sessions, discharges, mahOverride ->
+        val ratedMah = mahOverride ?: 4500
+        val health = repository.computeHealthSummary(ratedMah)
+        
+        if (sessions.isEmpty() && discharges.isEmpty()) {
             TrendsUiState.Empty
         } else {
+            val history = (sessions.map { HistoryItem.Charge(it) } + 
+                          discharges.map { HistoryItem.Discharge(it) })
+                          .sortedByDescending { it.timestamp }
+
+            val groupedHistory = history.groupBy { item ->
+                // If it's an open session, always put it at the very top under "Active"
+                val isOpen = when (item) {
+                    is HistoryItem.Charge -> item.session.isOpen
+                    is HistoryItem.Discharge -> item.event.isOpen
+                }
+                
+                if (isOpen) {
+                    "Currently Tracking"
+                } else {
+                    val date = java.time.Instant.ofEpochMilli(item.timestamp)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                    
+                    if (date == java.time.LocalDate.now()) "Today"
+                    else if (date == java.time.LocalDate.now().minusDays(1)) "Yesterday"
+                    else date.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMM d"))
+                }
+            }
+
             TrendsUiState.Content(
-                sessions = sessions.takeLast(20), // Last 20 sessions for the trend
+                groupedHistory = groupedHistory,
                 healthSummary = health
             )
         }
@@ -37,11 +66,23 @@ class TrendsViewModel @Inject constructor(
     )
 }
 
+sealed interface HistoryItem {
+    val timestamp: Long
+
+    data class Charge(val session: ChargeSession) : HistoryItem {
+        override val timestamp: Long get() = session.startTimestamp
+    }
+
+    data class Discharge(val event: DischargeEvent) : HistoryItem {
+        override val timestamp: Long get() = event.startTimestamp
+    }
+}
+
 sealed interface TrendsUiState {
     object Loading : TrendsUiState
     object Empty : TrendsUiState
     data class Content(
-        val sessions: List<ChargeSession>,
+        val groupedHistory: Map<String, List<HistoryItem>>,
         val healthSummary: HealthSummary?
     ) : TrendsUiState
 }

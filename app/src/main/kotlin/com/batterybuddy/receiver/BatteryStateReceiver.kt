@@ -9,7 +9,9 @@ import androidx.core.content.ContextCompat
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.model.ChargeSource
+import com.batterybuddy.data.model.ChargeState
 import com.batterybuddy.data.repository.BatteryRepository
 import com.batterybuddy.service.BatteryPollingService
 import com.batterybuddy.worker.BatteryDataWorker
@@ -18,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -45,11 +48,6 @@ class BatteryStateReceiver : BroadcastReceiver() {
     }
 
     private suspend fun handlePluggedIn(context: Context) {
-        val percent = readCurrentPercent(context)
-        val source  = resolveChargeSource(context)
-
-        repository.startChargeSession(percent, source)
-
         WorkManager.getInstance(context).cancelUniqueWork(BatteryDataWorker.WORK_NAME)
 
         val serviceIntent = Intent(context, BatteryPollingService::class.java)
@@ -61,6 +59,8 @@ class BatteryStateReceiver : BroadcastReceiver() {
         val chargeCounter = readChargeCounter(context)
 
         context.stopService(Intent(context, BatteryPollingService::class.java))
+
+        repository.insertReading(readCurrentReading(context, ChargeSource.NONE))
 
         repository.startDischargeEvent(
             startPercent       = percent,
@@ -92,13 +92,41 @@ class BatteryStateReceiver : BroadcastReceiver() {
         return value.takeIf { it > 0 }
     }
 
-    private fun resolveChargeSource(context: Context): ChargeSource {
-        val sticky  = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val plugged = sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-        return when (plugged) {
-            BatteryManager.BATTERY_PLUGGED_WIRELESS -> ChargeSource.WIRELESS
-            0                                       -> ChargeSource.NONE
-            else                                    -> ChargeSource.USB
+    private fun readCurrentReading(context: Context, source: ChargeSource): BatteryReading {
+        val bm = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val sticky = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val rawStatus = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val chargeState = if (source == ChargeSource.NONE) {
+            when (rawStatus) {
+                BatteryManager.BATTERY_STATUS_DISCHARGING -> ChargeState.DISCHARGING
+                else -> ChargeState.NOT_CHARGING
+            }
+        } else {
+            when (rawStatus) {
+                BatteryManager.BATTERY_STATUS_FULL -> ChargeState.FULL
+                BatteryManager.BATTERY_STATUS_CHARGING -> ChargeState.CHARGING
+                BatteryManager.BATTERY_STATUS_DISCHARGING -> ChargeState.DISCHARGING
+                else -> ChargeState.NOT_CHARGING
+            }
         }
+
+        return BatteryReading(
+            id = 0,
+            timestamp = Instant.now().toEpochMilli(),
+            voltageMillivolts = sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0,
+            temperatureTenthsCelsius = sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0,
+            chargeCounterMicroAmpHours = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER),
+            currentMicroAmps = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW),
+            batteryPercent = readCurrentPercent(context),
+            chargeSource = source,
+            chargeState = chargeState,
+            isScreenOn = false,
+            sessionId = null,
+            chargerVoltageMillivolts = null,
+            chargerCurrentMaxMilliamps = null,
+            isPdActive = null,
+            chargerType = null,
+            chargeProtocolLabel = null
+        )
     }
 }

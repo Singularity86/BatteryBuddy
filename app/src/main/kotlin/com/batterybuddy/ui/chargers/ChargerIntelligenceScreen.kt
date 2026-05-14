@@ -35,7 +35,8 @@ fun ChargerIntelligenceScreen(
         ) {
             Text(
                 text = "Charger Intelligence",
-                style = MaterialTheme.typography.headlineMedium
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
             )
             TextButton(onClick = onNavigateToEducation) {
                 Text("Why heat matters")
@@ -44,17 +45,35 @@ fun ChargerIntelligenceScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        when (val state = uiState) {
-            is ChargerUiState.Loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-            is ChargerUiState.Empty -> Text("No charger data yet. Charge with different plugs to see rankings.")
-            is ChargerUiState.Content -> ChargerList(state.chargers)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            when (val state = uiState) {
+                is ChargerUiState.Loading -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+                is ChargerUiState.Empty -> {
+                    Text(
+                        text = "No charger data yet. Plug in a charger and keep BatteryBuddy open briefly to start collecting.",
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                is ChargerUiState.Content -> ChargerList(state.chargers)
+            }
         }
     }
 }
 
 @Composable
 fun ChargerList(chargers: List<ChargerStats>) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
         items(chargers) { charger ->
             ChargerCard(charger)
         }
@@ -105,7 +124,11 @@ fun ChargerCard(charger: ChargerStats) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 MetricDetail("Avg Temp", "${charger.averagePeakTempCelsius.toInt()}°C", getTempColor(charger.averagePeakTempCelsius))
                 VerticalDivider(modifier = Modifier.height(24.dp).align(Alignment.CenterVertically).padding(horizontal = 16.dp))
-                MetricDetail("Avg Speed", "%.1f W".format(charger.averageWatts), MaterialTheme.colorScheme.primary)
+                MetricDetail(
+                    "Avg Speed",
+                    if (charger.averageWatts > 0f) "%.1f W".format(charger.averageWatts) else "Collecting",
+                    MaterialTheme.colorScheme.primary
+                )
             }
 
             if (charger.abusiveSessionCount > 0) {

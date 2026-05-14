@@ -21,12 +21,15 @@ import com.batterybuddy.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import javax.inject.Inject
 
@@ -38,6 +41,7 @@ class BatteryPollingService : Service() {
     @Inject lateinit var chargerInfoReader: ChargerInfoReader
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var pollingJob: Job? = null
 
     // Tracks the open charge session created when the service starts.
     private var activeSessionId: Long = -1L
@@ -55,27 +59,18 @@ class BatteryPollingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         postForegroundNotification()
-        scope.launch { runPollingLoop() }
+        if (pollingJob?.isActive != true) {
+            pollingJob = scope.launch {
+                runPollingLoop()
+            }
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
-        scope.launch {
-            if (activeSessionId > 0) {
-                val info = chargerInfoReader.read()
-                val batteryStatus = readBatteryStatus()
-                val profile = ChargerClassifier.classify(
-                    info,
-                    batteryStatus.voltageMv,
-                    batteryStatus.currentUa
-                )
-                repository.closeChargeSession(
-                    sessionId          = activeSessionId,
-                    endPercent         = batteryStatus.percent,
-                    chargerFingerprint = profile.fingerprint,
-                    chargerLabel       = profile.label
-                )
-            }
+        pollingJob?.cancel()
+        runBlocking(Dispatchers.IO + NonCancellable) {
+            closeActiveSession()
         }
         scope.cancel()
         super.onDestroy()
@@ -86,12 +81,20 @@ class BatteryPollingService : Service() {
     private suspend fun runPollingLoop() {
         val status = readBatteryStatus()
         val source = resolveChargeSource()
+
         activeSessionId = repository.startChargeSession(status.percent, source)
+
+        repository.updateChargeSession(
+            sessionId              = activeSessionId,
+            peakTempTenthsCelsius  = status.tempTenthsC,
+            chargeCounterMicroAmpHours = status.chargeCounterUah,
+            isOvernightHold        = false,
+            hasAbusiveTemp         = false
+        )
 
         while (scope.isActive) {
             val lastStatus = collectAndStore()
             
-            // Dynamic interval: 1 min if >= 80% or > 35°C, else 5 min.
             val interval = if (lastStatus.percent >= 80 || lastStatus.tempTenthsC >= 350) {
                 INTERVAL_FAST_MS
             } else {
@@ -143,6 +146,26 @@ class BatteryPollingService : Service() {
         }
         
         return batteryStatus
+    }
+
+    private suspend fun closeActiveSession() {
+        val sessionId = activeSessionId.takeIf { it > 0 } ?: return
+        activeSessionId = -1L
+
+        val batteryStatus = readBatteryStatus()
+        val info = chargerInfoReader.read()
+        val profile = ChargerClassifier.classify(
+            info,
+            batteryStatus.voltageMv,
+            batteryStatus.currentUa
+        )
+
+        repository.closeChargeSession(
+            sessionId          = sessionId,
+            endPercent         = batteryStatus.percent,
+            chargerFingerprint = profile.fingerprint,
+            chargerLabel       = profile.label
+        )
     }
 
     // ── Overnight hold detection ──────────────────────────────────────────────

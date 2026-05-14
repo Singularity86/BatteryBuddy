@@ -12,10 +12,12 @@ object ChargerClassifier {
 
     fun classify(info: ChargerInfo, batteryVoltageMv: Int, currentMicroAmps: Int): ChargerProfile {
         val watts = computeWatts(info, batteryVoltageMv, currentMicroAmps)
+        val fingerprint = buildFingerprint(info, watts)
+        
         return ChargerProfile(
             label       = buildLabel(info, watts),
             negotiatedWatts = watts,
-            fingerprint = buildFingerprint(info)
+            fingerprint = fingerprint
         )
     }
 
@@ -36,16 +38,30 @@ object ChargerClassifier {
             info.chargerType == "USB_PD" || info.chargerType == "PD"     -> "USB-PD$wLabel"
             info.chargerType?.contains("WIRELESS", ignoreCase = true) == true -> "Wireless$wLabel"
             (info.chargerVoltageMillivolts ?: 0) > 5500                  -> "Fast Charge$wLabel"
+            w > 15                                                        -> "Fast Charger$wLabel"
             w > 0                                                         -> "Standard$wLabel"
             else                                                          -> "Unknown"
         }
     }
 
     // Stable string key — identifies charger class, not a specific physical unit.
-    // Two identical 25W Samsung chargers produce the same fingerprint.
-    private fun buildFingerprint(info: ChargerInfo): String =
-        "${info.chargerType ?: "null"}|" +
-        "${info.chargerVoltageMillivolts ?: "null"}|" +
-        "${info.chargerCurrentMaxMilliamps ?: "null"}|" +
-        "${info.chargeProtocolLabel ?: "null"}"
+    private fun buildFingerprint(info: ChargerInfo, estimatedWatts: Float): String {
+        // If kernel info is missing, use the wattage bracket as a fallback fingerprint.
+        val type = info.chargerType ?: "GENERIC"
+        val volt = info.chargerVoltageMillivolts ?: "AUTO"
+        val curr = info.chargerCurrentMaxMilliamps ?: "AUTO"
+        val prot = info.chargeProtocolLabel ?: "NONE"
+        
+        // If everything is null, we create a bucket based on the observed power.
+        if (info.chargerType == null && info.chargeProtocolLabel == null) {
+            val powerBucket = when {
+                estimatedWatts > 20 -> "HighPower"
+                estimatedWatts > 10 -> "MedPower"
+                else -> "LowPower"
+            }
+            return "VIRTUAL|$powerBucket"
+        }
+
+        return "$type|$volt|$curr|$prot"
+    }
 }
