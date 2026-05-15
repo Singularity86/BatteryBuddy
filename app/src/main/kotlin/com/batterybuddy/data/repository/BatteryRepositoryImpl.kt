@@ -115,6 +115,9 @@ class BatteryRepositoryImpl @Inject constructor(
         )
     }
 
+    override suspend fun getLatestOpenChargeSession(): ChargeSession? =
+        sessionDao.getLatestOpenSession()?.toDomain()
+
     override fun getAllChargeSessions(): Flow<List<ChargeSession>> =
         sessionDao.getAllSessions().map { list -> list.map { it.toDomain() } }
 

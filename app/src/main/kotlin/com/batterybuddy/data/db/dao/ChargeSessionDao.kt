@@ -25,6 +25,9 @@ interface ChargeSessionDao {
     @Query("SELECT * FROM charge_sessions WHERE id = :id")
     suspend fun getById(id: Long): ChargeSessionEntity?
 
+    @Query("SELECT * FROM charge_sessions WHERE end_timestamp IS NULL ORDER BY start_timestamp DESC LIMIT 1")
+    suspend fun getLatestOpenSession(): ChargeSessionEntity?
+
     @Query("SELECT COUNT(*) FROM charge_sessions WHERE end_timestamp IS NOT NULL")
     fun getCompletedSessionCount(): Flow<Int>
 

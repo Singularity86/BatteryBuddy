@@ -56,7 +56,8 @@ class TrendsViewModel @Inject constructor(
 
             TrendsUiState.Content(
                 groupedHistory = groupedHistory,
-                healthSummary = health
+                healthSummary = health,
+                completedChargeSessionCount = sessions.count { !it.isOpen }
             )
         }
     }.stateIn(
@@ -83,6 +84,7 @@ sealed interface TrendsUiState {
     object Empty : TrendsUiState
     data class Content(
         val groupedHistory: Map<String, List<HistoryItem>>,
-        val healthSummary: HealthSummary?
+        val healthSummary: HealthSummary?,
+        val completedChargeSessionCount: Int
     ) : TrendsUiState
 }

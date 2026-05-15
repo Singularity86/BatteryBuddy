@@ -69,6 +69,8 @@ fun TrendsScreen(
 fun TrendsContent(state: TrendsUiState.Content) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
+            CalibrationGuidanceCard(state.completedChargeSessionCount)
+            Spacer(modifier = Modifier.height(12.dp))
             HealthSummaryCard(state)
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -90,6 +92,31 @@ fun TrendsContent(state: TrendsUiState.Content) {
                     is HistoryItem.Discharge -> DischargeEventItem(item.event)
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun CalibrationGuidanceCard(completedSessions: Int) {
+    if (completedSessions >= 5) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Calibration in progress",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Battery health estimates get steadier after about 5 completed charge sessions. Current count: $completedSessions.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
         }
     }
 }

@@ -82,7 +82,9 @@ class BatteryPollingService : Service() {
         val status = readBatteryStatus()
         val source = resolveChargeSource()
 
-        activeSessionId = repository.startChargeSession(status.percent, source)
+        val openSession = repository.getLatestOpenChargeSession()
+            ?.takeIf { it.chargeSource != ChargeSource.NONE }
+        activeSessionId = openSession?.id ?: repository.startChargeSession(status.percent, source)
 
         repository.updateChargeSession(
             sessionId              = activeSessionId,

@@ -1,9 +1,13 @@
 package com.batterybuddy.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.BatteryManager
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +38,8 @@ import com.batterybuddy.ui.chargers.ChargerIntelligenceScreen
 import com.batterybuddy.ui.chargers.ChargerIntelligenceViewModel
 import com.batterybuddy.ui.onboarding.OnboardingScreen
 import com.batterybuddy.ui.main.MainViewModel
+import com.batterybuddy.ui.settings.SettingsScreen
+import com.batterybuddy.ui.settings.SettingsViewModel
 import com.batterybuddy.service.BatteryPollingService
 import com.batterybuddy.worker.BatteryDataWorker
 import androidx.core.content.ContextCompat
@@ -80,14 +87,20 @@ class MainActivity : ComponentActivity() {
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val trendsViewModel: TrendsViewModel by viewModels()
     private val chargerViewModel: ChargerIntelligenceViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
+    private val requestNotifications = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        syncTrackingState()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Modern Android (targeting SDK 35+) enforces edge-to-edge.
         // We must enable it and use Scaffold's innerPadding to avoid clipping.
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        
-        syncTrackingState()
+
+        requestNotificationPermissionIfNeeded()
 
         setContent {
             val hasCompletedOnboarding by mainViewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
@@ -123,6 +136,12 @@ class MainActivity : ComponentActivity() {
                                     icon = { Icon(Icons.Default.Info, contentDescription = "School") },
                                     label = { Text("School") }
                                 )
+                                NavigationBarItem(
+                                    selected = selectedTab == 4,
+                                    onClick = { selectedTab = 4 },
+                                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                    label = { Text("Settings") }
+                                )
                             }
                         }
                     }
@@ -143,6 +162,7 @@ class MainActivity : ComponentActivity() {
                                 1 -> TrendsScreen(trendsViewModel) { selectedTab = 3 }
                                 2 -> ChargerIntelligenceScreen(chargerViewModel) { selectedTab = 3 }
                                 3 -> EducationScreen()
+                                4 -> SettingsScreen(settingsViewModel)
                             }
                         }
                     }
@@ -153,7 +173,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        syncTrackingState()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        ) {
+            syncTrackingState()
+        }
     }
 
     private fun syncTrackingState() {
@@ -170,6 +194,19 @@ class MainActivity : ComponentActivity() {
                 ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<BatteryDataWorker>().build()
             )
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            syncTrackingState()
+            return
+        }
+
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            syncTrackingState()
+        } else {
+            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
