@@ -1,10 +1,29 @@
 package com.batterybuddy.ui.trends
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -17,8 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.batterybuddy.data.model.ChargeSession
 import com.batterybuddy.data.model.DischargeEvent
 import com.batterybuddy.data.model.HealthVerdict
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.Icons
+import kotlin.math.max
 
 @Composable
 fun TrendsScreen(
@@ -46,7 +64,7 @@ fun TrendsScreen(
                 Text("Learn Why")
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
 
         when (val state = uiState) {
@@ -88,8 +106,14 @@ fun TrendsContent(state: TrendsUiState.Content) {
 
             items(items) { item ->
                 when (item) {
-                    is HistoryItem.Charge -> SessionWearItem(item.session)
-                    is HistoryItem.Discharge -> DischargeEventItem(item.event)
+                    is HistoryItem.Charge -> SessionWearItem(
+                        session = item.session,
+                        isCurrent = item.session.id == state.currentChargeSessionId
+                    )
+                    is HistoryItem.Discharge -> DischargeEventItem(
+                        event = item.event,
+                        isCurrent = item.event.id == state.currentDischargeEventId
+                    )
                 }
             }
         }
@@ -122,13 +146,16 @@ fun CalibrationGuidanceCard(completedSessions: Int) {
 }
 
 @Composable
-fun SessionWearItem(session: ChargeSession) {
-    val isOpen = session.isOpen
+fun SessionWearItem(session: ChargeSession, isCurrent: Boolean) {
+    val isInterrupted = session.isOpen && !isCurrent
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isOpen) 4.dp else 2.dp),
-        colors = if (isOpen) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)) 
-                 else CardDefaults.cardColors()
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrent) 4.dp else 2.dp),
+        colors = if (isCurrent) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+        } else {
+            CardDefaults.cardColors()
+        }
     ) {
         Row(
             modifier = Modifier
@@ -140,27 +167,27 @@ fun SessionWearItem(session: ChargeSession) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "${session.startPercent}% → ${session.endPercent ?: "Active"}",
+                        text = "${session.startPercent}% -> ${session.endPercent ?: if (isCurrent) "Active" else "Unknown"}",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    if (isOpen) {
+                    if (isCurrent || isInterrupted) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
-                                "LIVE",
+                                if (isCurrent) "LIVE" else "INTERRUPTED",
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                color = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
                 Text(
-                    text = "${session.chargeSource.name} • ${session.durationMinutes ?: 0} min",
+                    text = "${session.chargeSource.name} - charged ${formatDurationMinutes(session.displayDurationMinutes())}",
                     style = MaterialTheme.typography.labelSmall
                 )
             }
@@ -185,12 +212,18 @@ fun SessionWearItem(session: ChargeSession) {
 }
 
 @Composable
-fun DischargeEventItem(event: DischargeEvent) {
-    val isOpen = event.isOpen
+fun DischargeEventItem(event: DischargeEvent, isCurrent: Boolean) {
+    val isInterrupted = event.isOpen && !isCurrent
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isOpen) 4.dp else 1.dp),
-        colors = CardDefaults.cardColors(containerColor = if (isOpen) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrent) 4.dp else 1.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCurrent) {
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            }
+        )
     ) {
         Row(
             modifier = Modifier
@@ -202,27 +235,27 @@ fun DischargeEventItem(event: DischargeEvent) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "${event.startPercent}% → ${event.endPercent ?: "Active"}",
+                        text = "${event.startPercent}% -> ${event.endPercent ?: if (isCurrent) "Active" else "Unknown"}",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (isOpen) {
+                    if (isCurrent || isInterrupted) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.secondary
+                            color = if (isCurrent) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
-                                "TRACKING",
+                                if (isCurrent) "TRACKING" else "INTERRUPTED",
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondary
+                                color = if (isCurrent) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
                 Text(
-                    text = "Discharge • ${event.durationMinutes ?: 0} min",
+                    text = "Discharge - ${formatDurationMinutes(event.displayDurationMinutes())}",
                     style = MaterialTheme.typography.labelSmall
                 )
             }
@@ -300,4 +333,26 @@ fun getWearColor(cost: Float): Color = when {
     cost > 0.8f -> Color(0xFFF44336)
     cost > 0.4f -> Color(0xFFFF9800)
     else -> Color(0xFF4CAF50)
+}
+
+private fun ChargeSession.displayDurationMinutes(): Int {
+    durationMinutes?.let { return it }
+    val end = endTimestamp ?: System.currentTimeMillis()
+    return max(0L, (end - startTimestamp) / 60_000L).toInt()
+}
+
+private fun DischargeEvent.displayDurationMinutes(): Int {
+    durationMinutes?.let { return it }
+    val end = endTimestamp ?: System.currentTimeMillis()
+    return max(0L, (end - startTimestamp) / 60_000L).toInt()
+}
+
+private fun formatDurationMinutes(minutes: Int): String {
+    val hours = minutes / 60
+    val mins = minutes % 60
+    return when {
+        hours > 0 && mins > 0 -> "${hours}h ${mins}m"
+        hours > 0 -> "${hours}h"
+        else -> "${mins}m"
+    }
 }

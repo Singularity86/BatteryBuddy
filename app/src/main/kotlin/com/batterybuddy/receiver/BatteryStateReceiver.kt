@@ -60,6 +60,15 @@ class BatteryStateReceiver : BroadcastReceiver() {
 
         context.stopService(Intent(context, BatteryPollingService::class.java))
 
+        repository.getLatestOpenChargeSession()?.let { session ->
+            repository.closeChargeSession(
+                sessionId = session.id,
+                endPercent = percent,
+                chargerFingerprint = session.chargerFingerprint,
+                chargerLabel = session.chargerLabel
+            )
+        }
+
         repository.insertReading(readCurrentReading(context, ChargeSource.NONE))
 
         repository.startDischargeEvent(

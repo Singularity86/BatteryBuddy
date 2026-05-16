@@ -30,18 +30,25 @@ class TrendsViewModel @Inject constructor(
         if (sessions.isEmpty() && discharges.isEmpty()) {
             TrendsUiState.Empty
         } else {
+            val newestOpenChargeId = sessions
+                .filter { it.isOpen }
+                .maxByOrNull { it.startTimestamp }
+                ?.id
+            val newestOpenDischargeId = discharges
+                .filter { it.isOpen }
+                .maxByOrNull { it.startTimestamp }
+                ?.id
             val history = (sessions.map { HistoryItem.Charge(it) } + 
                           discharges.map { HistoryItem.Discharge(it) })
                           .sortedByDescending { it.timestamp }
 
             val groupedHistory = history.groupBy { item ->
-                // If it's an open session, always put it at the very top under "Active"
-                val isOpen = when (item) {
-                    is HistoryItem.Charge -> item.session.isOpen
-                    is HistoryItem.Discharge -> item.event.isOpen
+                val isCurrent = when (item) {
+                    is HistoryItem.Charge -> item.session.id == newestOpenChargeId
+                    is HistoryItem.Discharge -> item.event.id == newestOpenDischargeId
                 }
                 
-                if (isOpen) {
+                if (isCurrent) {
                     "Currently Tracking"
                 } else {
                     val date = java.time.Instant.ofEpochMilli(item.timestamp)
@@ -57,7 +64,9 @@ class TrendsViewModel @Inject constructor(
             TrendsUiState.Content(
                 groupedHistory = groupedHistory,
                 healthSummary = health,
-                completedChargeSessionCount = sessions.count { !it.isOpen }
+                completedChargeSessionCount = sessions.count { !it.isOpen },
+                currentChargeSessionId = newestOpenChargeId,
+                currentDischargeEventId = newestOpenDischargeId
             )
         }
     }.stateIn(
@@ -85,6 +94,8 @@ sealed interface TrendsUiState {
     data class Content(
         val groupedHistory: Map<String, List<HistoryItem>>,
         val healthSummary: HealthSummary?,
-        val completedChargeSessionCount: Int
+        val completedChargeSessionCount: Int,
+        val currentChargeSessionId: Long?,
+        val currentDischargeEventId: Long?
     ) : TrendsUiState
 }
