@@ -18,6 +18,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     var tempThreshold by remember { mutableStateOf(state.tempAlertThresholdCelsius.toString()) }
     var holdThreshold by remember { mutableStateOf(state.overnightHoldThresholdMinutes.toString()) }
     var pollingInterval by remember { mutableStateOf(state.backgroundPollingIntervalMinutes.toString()) }
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.deviceModel, state.ratedMahOverride, state.tempAlertThresholdCelsius, state.overnightHoldThresholdMinutes, state.backgroundPollingIntervalMinutes) {
         deviceModel = state.deviceModel
@@ -100,7 +102,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             }
         }
 
-        DiagnosticsCard(state)
+        TextButton(onClick = { showDiagnostics = !showDiagnostics }) {
+            Text(if (showDiagnostics) "Hide Diagnostics" else "Show Diagnostics")
+        }
+
+        if (showDiagnostics) {
+            DiagnosticsCard(state)
+        }
     }
 }
 

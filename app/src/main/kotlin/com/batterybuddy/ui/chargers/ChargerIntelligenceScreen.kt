@@ -28,23 +28,6 @@ fun ChargerIntelligenceScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Charger Intelligence",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            TextButton(onClick = onNavigateToEducation) {
-                Text("Why heat matters")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -55,14 +38,34 @@ fun ChargerIntelligenceScreen(
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
                 is ChargerUiState.Empty -> {
-                    Text(
-                        text = "No charger data yet. Plug in a charger and keep BatteryBuddy open briefly to start collecting.",
-                        modifier = Modifier.align(Alignment.Center),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    ChargerEmptyState(modifier = Modifier.align(Alignment.Center))
                 }
                 is ChargerUiState.Content -> ChargerList(state.chargers)
             }
+        }
+    }
+}
+
+@Composable
+private fun ChargerEmptyState(modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Collecting charger behavior",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Plug in a charger and keep BatteryBuddy open for a few minutes. Unplugging finishes the session so the app can compare speed, heat, and wear.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -99,7 +102,7 @@ fun ChargerCard(charger: ChargerStats) {
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Based on ${charger.sessionCount} sessions",
+                        text = "Based on ${charger.sessionCount} samples",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )

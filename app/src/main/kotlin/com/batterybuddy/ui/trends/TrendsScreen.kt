@@ -50,23 +50,6 @@ fun TrendsScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Health Trends",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            TextButton(onClick = onNavigateToEducation) {
-                Text("Learn Why")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         when (val state = uiState) {
             is TrendsUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

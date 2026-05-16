@@ -30,23 +30,6 @@ fun DashboardScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Battery Status",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            TextButton(onClick = onNavigateToEducation) {
-                Text("Learn More")
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-
         when (val state = uiState) {
             is DashboardUiState.Loading -> {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -96,7 +79,6 @@ fun DashboardContent(reading: BatteryReading) {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Battery Percentage Large
         Text(
             text = "${reading.batteryPercent}%",
             fontSize = if (isLandscape) 52.sp else 84.sp,
@@ -119,7 +101,6 @@ fun DashboardContent(reading: BatteryReading) {
 
         Spacer(modifier = Modifier.height(if (isLandscape) 20.dp else 48.dp))
 
-        // Dynamic Metrics Grid
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly

@@ -15,6 +15,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
@@ -24,6 +25,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.ExistingWorkPolicy
@@ -100,47 +102,46 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        requestNotificationPermissionIfNeeded()
+        syncTrackingState()
 
         setContent {
             val hasCompletedOnboarding by mainViewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
-            var selectedTab by remember { mutableIntStateOf(0) }
+            var destination by remember { mutableStateOf(AppDestination.Live) }
+            var showNotificationRationale by remember { mutableStateOf(shouldRequestNotificationPermission()) }
 
             BatteryBuddyTheme {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    topBar = {
+                        if (hasCompletedOnboarding) {
+                            AppTopBar(
+                                destination = destination,
+                                onBack = { destination = AppDestination.Live },
+                                onOpenSchool = { destination = AppDestination.School },
+                                onOpenSettings = { destination = AppDestination.Settings }
+                            )
+                        }
+                    },
                     bottomBar = {
                         if (hasCompletedOnboarding) {
                             NavigationBar {
                                 NavigationBarItem(
-                                    selected = selectedTab == 0,
-                                    onClick = { selectedTab = 0 },
+                                    selected = destination == AppDestination.Live,
+                                    onClick = { destination = AppDestination.Live },
                                     icon = { Icon(Icons.Default.Home, contentDescription = "Live") },
                                     label = { Text("Live") }
                                 )
                                 NavigationBarItem(
-                                    selected = selectedTab == 1,
-                                    onClick = { selectedTab = 1 },
-                                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Trends") },
-                                    label = { Text("Trends") }
+                                    selected = destination == AppDestination.History,
+                                    onClick = { destination = AppDestination.History },
+                                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "History") },
+                                    label = { Text("History") }
                                 )
                                 NavigationBarItem(
-                                    selected = selectedTab == 2,
-                                    onClick = { selectedTab = 2 },
+                                    selected = destination == AppDestination.Chargers,
+                                    onClick = { destination = AppDestination.Chargers },
                                     icon = { Icon(Icons.Default.Star, contentDescription = "Chargers") },
                                     label = { Text("Chargers") }
-                                )
-                                NavigationBarItem(
-                                    selected = selectedTab == 3,
-                                    onClick = { selectedTab = 3 },
-                                    icon = { Icon(Icons.Default.Info, contentDescription = "School") },
-                                    label = { Text("School") }
-                                )
-                                NavigationBarItem(
-                                    selected = selectedTab == 4,
-                                    onClick = { selectedTab = 4 },
-                                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                    label = { Text("Settings") }
                                 )
                             }
                         }
@@ -157,15 +158,28 @@ class MainActivity : ComponentActivity() {
                                 mainViewModel.completeOnboarding(model, mah)
                             }
                         } else {
-                            when (selectedTab) {
-                                0 -> DashboardScreen(dashboardViewModel) { selectedTab = 3 }
-                                1 -> TrendsScreen(trendsViewModel) { selectedTab = 3 }
-                                2 -> ChargerIntelligenceScreen(chargerViewModel) { selectedTab = 3 }
-                                3 -> EducationScreen()
-                                4 -> SettingsScreen(settingsViewModel)
+                            when (destination) {
+                                AppDestination.Live -> DashboardScreen(dashboardViewModel) { destination = AppDestination.School }
+                                AppDestination.History -> TrendsScreen(trendsViewModel) { destination = AppDestination.School }
+                                AppDestination.Chargers -> ChargerIntelligenceScreen(chargerViewModel) { destination = AppDestination.School }
+                                AppDestination.School -> EducationScreen()
+                                AppDestination.Settings -> SettingsScreen(settingsViewModel)
                             }
                         }
                     }
+                }
+
+                if (showNotificationRationale) {
+                    NotificationPermissionDialog(
+                        onGrant = {
+                            showNotificationRationale = false
+                            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        onDismiss = {
+                            showNotificationRationale = false
+                            syncTrackingState()
+                        }
+                    )
                 }
             }
         }
@@ -198,19 +212,101 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            syncTrackingState()
-            return
-        }
+        if (!shouldRequestNotificationPermission()) syncTrackingState()
+    }
 
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-            syncTrackingState()
-        } else {
-            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+    private fun shouldRequestNotificationPermission(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
     }
 
     companion object {
         private const val LIVE_REFRESH_WORK_NAME = "battery_live_refresh"
     }
+}
+
+private enum class AppDestination(val title: String, val isPrimary: Boolean) {
+    Live("Live", true),
+    History("History", true),
+    Chargers("Chargers", true),
+    School("Battery School", false),
+    Settings("Settings", false)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppTopBar(
+    destination: AppDestination,
+    onBack: () -> Unit,
+    onOpenSchool: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = destination.title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        navigationIcon = {
+            if (!destination.isPrimary) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            }
+        },
+        actions = {
+            IconButton(onClick = onOpenSchool) {
+                Icon(Icons.Default.Info, contentDescription = "Battery School")
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings")
+            }
+        }
+    )
+}
+
+@Composable
+private fun NotificationPermissionDialog(
+    onGrant: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Allow battery alerts?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("BatteryBuddy uses notifications for monitoring that needs to keep running while you charge.")
+                Text("Granting this lets the app show:")
+                PermissionReason("A quiet monitoring notification while charging")
+                PermissionReason("High-temperature warnings before heat damages long-term capacity")
+                PermissionReason("Overnight full-charge alerts so you can unplug sooner")
+                Text(
+                    text = "BatteryBuddy does not use this permission for ads or marketing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onGrant) {
+                Text("Allow")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Not Now")
+            }
+        }
+    )
+}
+
+@Composable
+private fun PermissionReason(text: String) {
+    Text(
+        text = "- $text",
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold
+    )
 }

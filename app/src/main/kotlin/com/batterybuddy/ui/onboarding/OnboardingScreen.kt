@@ -9,7 +9,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun OnboardingScreen(
@@ -31,10 +30,12 @@ fun OnboardingScreen(
                 Text("Welcome to BatteryBuddy", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "To calculate your battery health accurately, we need to know your device's design specifications.",
+                    "BatteryBuddy watches charge sessions, heat, current, and time at 100% so it can explain which habits and chargers are hardest on your battery.",
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                PermissionExplanationCard()
                 Spacer(modifier = Modifier.height(32.dp))
                 Button(onClick = { step = 2 }) {
                     Text("Get Started")
@@ -79,6 +80,37 @@ fun OnboardingScreen(
                     Text("Complete Setup")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PermissionExplanationCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Why permissions matter",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Notifications keep monitoring visible while charging and allow temperature or overnight full-charge warnings.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Usage access is optional. If you grant it later, BatteryBuddy can connect unusual drain to foreground app activity. Without it, battery and charger tracking still work.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Boot permission restarts background collection after a phone restart. No personal content is read.",
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
