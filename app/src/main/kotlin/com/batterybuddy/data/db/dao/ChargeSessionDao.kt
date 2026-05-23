@@ -28,6 +28,9 @@ interface ChargeSessionDao {
     @Query("SELECT * FROM charge_sessions WHERE end_timestamp IS NULL ORDER BY start_timestamp DESC LIMIT 1")
     suspend fun getLatestOpenSession(): ChargeSessionEntity?
 
+    @Query("SELECT * FROM charge_sessions WHERE end_timestamp IS NULL ORDER BY start_timestamp DESC")
+    suspend fun getOpenSessions(): List<ChargeSessionEntity>
+
     @Query("SELECT COUNT(*) FROM charge_sessions WHERE end_timestamp IS NOT NULL")
     fun getCompletedSessionCount(): Flow<Int>
 
@@ -41,8 +44,8 @@ interface ChargeSessionDao {
     @Query("""
         UPDATE charge_sessions SET
             peak_temp_tenths_c   = CASE WHEN :peakTemp   > COALESCE(peak_temp_tenths_c,   -9999)   THEN :peakTemp   ELSE peak_temp_tenths_c   END,
-            max_charge_counter_uah = CASE WHEN :counter > COALESCE(max_charge_counter_uah, -9999)   THEN :counter ELSE max_charge_counter_uah END,
-            min_charge_counter_uah = CASE WHEN :counter < COALESCE(min_charge_counter_uah, 9999999) THEN :counter ELSE min_charge_counter_uah END,
+            max_charge_counter_uah = CASE WHEN :counter > 0 AND :counter > COALESCE(max_charge_counter_uah, -9999)   THEN :counter ELSE max_charge_counter_uah END,
+            min_charge_counter_uah = CASE WHEN :counter > 0 AND :counter < COALESCE(min_charge_counter_uah, 9999999) THEN :counter ELSE min_charge_counter_uah END,
             is_overnight_hold    = :isOvernightHold,
             has_abusive_temp     = :hasAbusiveTemp
         WHERE id = :sessionId
@@ -78,6 +81,12 @@ interface ChargeSessionDao {
         chargerFingerprint: String?,
         chargerLabel: String?
     )
+
+    @Query("SELECT * FROM charge_sessions WHERE charger_fingerprint = :fingerprint ORDER BY start_timestamp DESC")
+    fun getSessionsByFingerprint(fingerprint: String): Flow<List<ChargeSessionEntity>>
+
+    @Query("UPDATE charge_sessions SET charger_label = :label WHERE charger_fingerprint = :fingerprint")
+    suspend fun updateLabelForFingerprint(fingerprint: String, label: String)
 
     @Query("DELETE FROM charge_sessions")
     suspend fun deleteAll()

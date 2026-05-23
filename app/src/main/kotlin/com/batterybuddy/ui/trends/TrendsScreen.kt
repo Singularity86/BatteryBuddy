@@ -176,11 +176,11 @@ fun SessionWearItem(session: ChargeSession, isCurrent: Boolean) {
             }
 
             Column(horizontalAlignment = Alignment.End) {
-                val cost = session.weightedCycleCost ?: 0f
+                val cost = session.displayWearCost()
                 Text(
-                    text = "%.2f Wear Units".format(cost),
+                    text = if (cost != null) "%.2f Wear Units".format(cost) else "Tracking wear",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = getWearColor(cost)
+                    color = cost?.let(::getWearColor) ?: MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (session.hasAbusiveTemp) {
                     Text(
@@ -322,6 +322,21 @@ private fun ChargeSession.displayDurationMinutes(): Int {
     durationMinutes?.let { return it }
     val end = endTimestamp ?: System.currentTimeMillis()
     return max(0L, (end - startTimestamp) / 60_000L).toInt()
+}
+
+private fun ChargeSession.displayWearCost(): Float? {
+    weightedCycleCost?.let { return it }
+    val end = endPercent ?: return null
+    val chargedPercent = (end - startPercent).coerceAtLeast(0) / 100f
+    if (chargedPercent <= 0f) return 0f
+    val tempC = peakTempTenthsCelsius?.div(10f) ?: 25f
+    val tempFactor = when {
+        tempC > 45f -> 1.5f
+        tempC > 38f -> 1.2f
+        tempC < 10f -> 1.1f
+        else -> 1.0f
+    }
+    return chargedPercent * chargedPercent * tempFactor
 }
 
 private fun DischargeEvent.displayDurationMinutes(): Int {

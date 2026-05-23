@@ -28,9 +28,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.batterybuddy.data.repository.BatteryRepository
 import com.batterybuddy.ui.dashboard.DashboardScreen
 import com.batterybuddy.ui.dashboard.DashboardViewModel
 import com.batterybuddy.ui.education.EducationScreen
@@ -46,6 +48,8 @@ import com.batterybuddy.service.BatteryPollingService
 import com.batterybuddy.worker.BatteryDataWorker
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF8BC34A),
@@ -85,6 +89,8 @@ fun BatteryBuddyTheme(
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var repository: BatteryRepository
+
     private val mainViewModel: MainViewModel by viewModels()
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val trendsViewModel: TrendsViewModel by viewModels()
@@ -198,16 +204,29 @@ class MainActivity : ComponentActivity() {
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         val batteryStatus = registerReceiver(null, filter)
         val plugged = batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+        val percent = getBatteryPercent(batteryStatus)
         
         if (plugged > 0) {
             val serviceIntent = Intent(this, BatteryPollingService::class.java)
             ContextCompat.startForegroundService(this, serviceIntent)
         } else {
+            lifecycleScope.launch {
+                repository.closeOpenChargeSessions(percent)
+            }
             WorkManager.getInstance(this).enqueueUniqueWork(
                 LIVE_REFRESH_WORK_NAME,
                 ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<BatteryDataWorker>().build()
             )
+        }
+    }
+
+    private fun getBatteryPercent(batteryStatus: Intent?): Int {
+        val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        return if (level >= 0 && scale > 0) level * 100 / scale else {
+            val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
+            bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceAtLeast(0)
         }
     }
 

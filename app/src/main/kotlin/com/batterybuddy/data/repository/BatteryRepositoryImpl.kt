@@ -101,7 +101,7 @@ class BatteryRepositoryImpl @Inject constructor(
             // µAh × nominal cell voltage (3700 mV) / 1000 → mWh (approximation)
             ((maxCounter - minCounter).toLong() * 3700L) / 1_000L
         } else null
-        val dod = (100 - session.startPercent) / 100f
+        val dod = (endPercent - session.startPercent).coerceAtLeast(0) / 100f
         sessionDao.closeSession(
             sessionId          = sessionId,
             endTimestamp       = now,
@@ -113,6 +113,17 @@ class BatteryRepositoryImpl @Inject constructor(
             chargerFingerprint = chargerFingerprint,
             chargerLabel       = chargerLabel
         )
+    }
+
+    override suspend fun closeOpenChargeSessions(endPercent: Int) {
+        sessionDao.getOpenSessions().forEach { session ->
+            closeChargeSession(
+                sessionId = session.id,
+                endPercent = endPercent,
+                chargerFingerprint = session.chargerFingerprint,
+                chargerLabel = session.chargerLabel
+            )
+        }
     }
 
     override suspend fun getLatestOpenChargeSession(): ChargeSession? =
@@ -129,6 +140,12 @@ class BatteryRepositoryImpl @Inject constructor(
 
     override fun getSessionsSince(since: Long): Flow<List<ChargeSession>> =
         sessionDao.getSessionsSince(since).map { list -> list.map { it.toDomain() } }
+
+    override fun getSessionsByFingerprint(fingerprint: String): Flow<List<ChargeSession>> =
+        sessionDao.getSessionsByFingerprint(fingerprint).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun updateChargerLabelForFingerprint(fingerprint: String, label: String) =
+        sessionDao.updateLabelForFingerprint(fingerprint, label)
 
     // endregion
 

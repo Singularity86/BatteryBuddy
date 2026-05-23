@@ -31,6 +31,7 @@ class UserPreferencesStore @Inject constructor(
         val HAS_COMPLETED_ONBOARDING     = booleanPreferencesKey("has_completed_onboarding")
         val HAS_DISMISSED_PROTECT_TIP    = booleanPreferencesKey("has_dismissed_protect_tip")
         val BG_POLLING_INTERVAL_MIN      = intPreferencesKey("bg_polling_interval_min")
+        val CHARGER_LABELS_ENCODED       = stringPreferencesKey("charger_labels_encoded")
     }
 
     val ratedMahOverride: Flow<Int?> =
@@ -57,6 +58,10 @@ class UserPreferencesStore @Inject constructor(
     val backgroundPollingIntervalMinutes: Flow<Int> =
         context.dataStore.data.map { it[Keys.BG_POLLING_INTERVAL_MIN] ?: 15 }
 
+    // Charger labels keyed by fingerprint. Stored as "fp\tlabel\nfp\tlabel…"
+    val chargerLabels: Flow<Map<String, String>> =
+        context.dataStore.data.map { decodeLabels(it[Keys.CHARGER_LABELS_ENCODED] ?: "") }
+
     suspend fun setRatedMahOverride(mah: Int?) = context.dataStore.edit { prefs ->
         if (mah == null) prefs.remove(Keys.RATED_MAH_OVERRIDE)
         else prefs[Keys.RATED_MAH_OVERRIDE] = mah
@@ -82,4 +87,25 @@ class UserPreferencesStore @Inject constructor(
 
     suspend fun setBackgroundPollingIntervalMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.BG_POLLING_INTERVAL_MIN] = minutes }
+
+    suspend fun setChargerLabel(fingerprint: String, label: String) {
+        context.dataStore.edit { prefs ->
+            val current = decodeLabels(prefs[Keys.CHARGER_LABELS_ENCODED] ?: "").toMutableMap()
+            current[fingerprint] = label
+            prefs[Keys.CHARGER_LABELS_ENCODED] = encodeLabels(current)
+        }
+    }
+
+    // Entries separated by \n; key and value separated by \t.
+    // Fingerprints and user labels never contain \n or \t in practice.
+    private fun decodeLabels(encoded: String): Map<String, String> {
+        if (encoded.isBlank()) return emptyMap()
+        return encoded.lines().mapNotNull { line ->
+            val tab = line.indexOf('\t')
+            if (tab > 0) line.substring(0, tab) to line.substring(tab + 1) else null
+        }.toMap()
+    }
+
+    private fun encodeLabels(map: Map<String, String>): String =
+        map.entries.joinToString("\n") { "${it.key}\t${it.value}" }
 }
