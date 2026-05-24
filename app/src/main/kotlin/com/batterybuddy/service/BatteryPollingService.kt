@@ -154,6 +154,7 @@ class BatteryPollingService : Service() {
         val sessionId = activeSessionId.takeIf { it > 0 } ?: return
         activeSessionId = -1L
 
+        val openSession = repository.getLatestOpenChargeSession()
         val batteryStatus = readBatteryStatus()
         val info = chargerInfoReader.read()
         val profile = ChargerClassifier.classify(
@@ -168,6 +169,57 @@ class BatteryPollingService : Service() {
             chargerFingerprint = profile.fingerprint,
             chargerLabel       = profile.label
         )
+
+        openSession?.let { session ->
+            fireSessionSummaryNotification(
+                startPercent  = session.startPercent,
+                endPercent    = batteryStatus.percent,
+                startMs       = session.startTimestamp,
+                peakTempTenthsC = session.peakTempTenthsCelsius,
+                chargerLabel  = profile.label
+            )
+        }
+    }
+
+    private fun fireSessionSummaryNotification(
+        startPercent: Int,
+        endPercent: Int,
+        startMs: Long,
+        peakTempTenthsC: Int?,
+        chargerLabel: String
+    ) {
+        val durationMin = ((System.currentTimeMillis() - startMs) / 60_000L).toInt()
+        val durationStr = if (durationMin >= 60) "${durationMin / 60}h ${durationMin % 60}m"
+                          else "${durationMin}m"
+        val dod = (endPercent - startPercent).coerceAtLeast(0) / 100f
+        val tempC = (peakTempTenthsC ?: 250) / 10f
+        val tempFactor = when {
+            tempC > 45f -> 1.5f
+            tempC > 38f -> 1.2f
+            tempC < 10f -> 1.1f
+            else        -> 1.0f
+        }
+        val cost = dod * dod * tempFactor
+        val impactLabel = when {
+            cost > 0.8f -> "High Impact"
+            cost > 0.4f -> "Medium Impact"
+            else        -> "Low Impact"
+        }
+
+        val tapIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = NotificationCompat.Builder(this, CHANNEL_REPORTS)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle("Charge complete · $impactLabel")
+            .setContentText("${startPercent}%→${endPercent}% in $durationStr · $chargerLabel")
+            .setAutoCancel(true)
+            .setContentIntent(tapIntent)
+            .build()
+        nm.notify(NOTIFICATION_ID_SESSION_SUMMARY, notification)
     }
 
     // ── Overnight hold detection ──────────────────────────────────────────────
@@ -301,10 +353,12 @@ class BatteryPollingService : Service() {
         private const val INTERVAL_FAST_MS        = 60_000L      // 1 minute
         private const val INTERVAL_NORMAL_MS      = 5 * 60_000L  // 5 minutes
         private const val THERMAL_ALERT_COOLDOWN_MS = 30 * 60_000L
-        private const val CHANNEL_MONITORING      = "battery_monitoring"
-        private const val CHANNEL_ALERTS          = "battery_alerts"
-        private const val NOTIFICATION_ID_FOREGROUND = 1001
-        private const val NOTIFICATION_ID_THERMAL    = 1002
-        private const val NOTIFICATION_ID_OVERNIGHT  = 1003
+        private const val CHANNEL_MONITORING        = "battery_monitoring"
+        private const val CHANNEL_ALERTS            = "battery_alerts"
+        private const val CHANNEL_REPORTS           = "battery_reports"
+        private const val NOTIFICATION_ID_FOREGROUND     = 1001
+        private const val NOTIFICATION_ID_THERMAL        = 1002
+        private const val NOTIFICATION_ID_OVERNIGHT      = 1003
+        private const val NOTIFICATION_ID_SESSION_SUMMARY = 1004
     }
 }

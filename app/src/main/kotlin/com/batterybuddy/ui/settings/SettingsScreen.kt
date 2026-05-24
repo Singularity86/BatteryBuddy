@@ -69,8 +69,15 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 label = { Text("Device model") },
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(8.dp))
-            NumberField("Rated capacity override (mAh)", ratedMah) { ratedMah = it }
+            Spacer(Modifier.height(12.dp))
+            NumberField("Battery rated capacity (mAh)", ratedMah) { ratedMah = it }
+            Text(
+                text = "Found in your phone's spec sheet. Used to calculate health %. " +
+                    "Currently using: ${ratedMah.toIntOrNull() ?: 4500} mAh.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = {

@@ -83,6 +83,8 @@ fun TrendsContent(state: TrendsUiState.Content) {
             CalibrationGuidanceCard(state.completedChargeSessionCount)
             Spacer(modifier = Modifier.height(12.dp))
             HealthSummaryCard(state)
+            Spacer(modifier = Modifier.height(8.dp))
+            LifetimeWearCard(state)
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -424,6 +426,62 @@ fun HealthSummaryCard(state: TrendsUiState.Content) {
         }
     }
 }
+
+@Composable
+fun LifetimeWearCard(state: TrendsUiState.Content) {
+    val wear = state.lifetimeWear
+    if (wear <= 0f && state.completedChargeSessionCount == 0) return
+
+    val remaining = (RATED_CYCLES - wear).coerceAtLeast(0f)
+    val progress = (wear / RATED_CYCLES).coerceIn(0f, 1f)
+    val wearColor = when {
+        progress > 0.6f -> Color(0xFFF44336)
+        progress > 0.3f -> Color(0xFFFF9800)
+        else            -> Color(0xFF4CAF50)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = wearColor.copy(alpha = 0.08f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Lifetime Wear", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Text(
+                    text = "%.1f cycles used".format(wear),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = wearColor
+                )
+                Text(
+                    text = "~%.0f remaining".format(remaining),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+                color = wearColor,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Based on ${state.completedChargeSessionCount} sessions · rated ~$RATED_CYCLES cycles",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private const val RATED_CYCLES = 500f
 
 fun getVerdictColor(verdict: HealthVerdict): Color = when (verdict) {
     HealthVerdict.HEALTHY          -> Color(0xFF4CAF50)

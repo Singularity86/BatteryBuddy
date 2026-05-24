@@ -61,12 +61,18 @@ class TrendsViewModel @Inject constructor(
                 }
             }
 
+            val lifetimeWear = sessions
+                .filter { !it.isOpen }
+                .mapNotNull { it.weightedCycleCost }
+                .sum()
+
             TrendsUiState.Content(
                 groupedHistory = groupedHistory,
                 healthSummary = health,
                 completedChargeSessionCount = sessions.count { !it.isOpen },
                 currentChargeSessionId = newestOpenChargeId,
-                currentDischargeEventId = newestOpenDischargeId
+                currentDischargeEventId = newestOpenDischargeId,
+                lifetimeWear = lifetimeWear
             )
         }
     }.stateIn(
@@ -96,6 +102,7 @@ sealed interface TrendsUiState {
         val healthSummary: HealthSummary?,
         val completedChargeSessionCount: Int,
         val currentChargeSessionId: Long?,
-        val currentDischargeEventId: Long?
+        val currentDischargeEventId: Long?,
+        val lifetimeWear: Float = 0f
     ) : TrendsUiState
 }
