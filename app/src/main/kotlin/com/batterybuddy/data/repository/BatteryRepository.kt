@@ -17,6 +17,7 @@ interface BatteryRepository {
     suspend fun insertReading(reading: BatteryReading): Long
     fun getReadingsForSession(sessionId: Long): Flow<List<BatteryReading>>
     fun getReadingsSince(since: Long): Flow<List<BatteryReading>>
+    fun getReadingsBetween(start: Long, end: Long): Flow<List<BatteryReading>>
     suspend fun getLatestReading(): BatteryReading?
     fun observeLatestReading(): Flow<BatteryReading?>
 
@@ -45,6 +46,7 @@ interface BatteryRepository {
     suspend fun updateChargerLabelForFingerprint(fingerprint: String, label: String)
 
     // --- Discharge events ---
+    suspend fun getDischargeEventById(id: Long): DischargeEvent?
     suspend fun startDischargeEvent(startPercent: Int, startChargeCounter: Int?): Long
     suspend fun closeDischargeEvent(
         eventId: Long,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.*
@@ -49,7 +50,10 @@ fun ChargerIntelligenceScreen(
             when (val state = uiState) {
                 is ChargerUiState.Loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 is ChargerUiState.Empty -> ChargerEmptyState(modifier = Modifier.align(Alignment.Center))
-                is ChargerUiState.Content -> ChargerList(state.chargers)
+                is ChargerUiState.Content -> ChargerList(
+                    chargers = state.chargers,
+                    onRename = { fp, label -> viewModel.saveChargerLabel(fp, label) }
+                )
             }
         }
     }
@@ -119,21 +123,39 @@ private fun ChargerEmptyState(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ChargerList(chargers: List<ChargerStats>) {
+fun ChargerList(
+    chargers: List<ChargerStats>,
+    onRename: (fingerprint: String, label: String) -> Unit = { _, _ -> }
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         items(chargers, key = { it.fingerprint }) { charger ->
-            ChargerCard(charger)
+            ChargerCard(charger, onRename = { label -> onRename(charger.fingerprint, label) })
         }
     }
 }
 
 @Composable
-fun ChargerCard(charger: ChargerStats) {
+fun ChargerCard(
+    charger: ChargerStats,
+    onRename: (label: String) -> Unit = {}
+) {
     var expanded by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+
+    if (showRenameDialog) {
+        ChargerLabelDialog(
+            autoLabel = charger.label,
+            onSave = { label ->
+                onRename(label)
+                showRenameDialog = false
+            },
+            onSkip = { showRenameDialog = false }
+        )
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -172,8 +194,19 @@ fun ChargerCard(charger: ChargerStats) {
                             color = getScoreColor(charger.efficiencyScore)
                         )
                     }
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { showRenameDialog = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Rename charger",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     if (charger.sessions.isNotEmpty()) {
-                        Spacer(Modifier.width(4.dp))
                         IconButton(
                             onClick = { expanded = !expanded },
                             modifier = Modifier.size(36.dp)

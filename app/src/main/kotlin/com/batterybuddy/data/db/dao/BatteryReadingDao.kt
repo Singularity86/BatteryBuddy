@@ -18,6 +18,9 @@ interface BatteryReadingDao {
     @Query("SELECT * FROM battery_readings WHERE timestamp >= :since ORDER BY timestamp ASC")
     fun getReadingsSince(since: Long): Flow<List<BatteryReadingEntity>>
 
+    @Query("SELECT * FROM battery_readings WHERE timestamp >= :start AND timestamp <= :end ORDER BY timestamp ASC")
+    fun getReadingsBetween(start: Long, end: Long): Flow<List<BatteryReadingEntity>>
+
     @Query("SELECT * FROM battery_readings ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLatestReading(): BatteryReadingEntity?
 

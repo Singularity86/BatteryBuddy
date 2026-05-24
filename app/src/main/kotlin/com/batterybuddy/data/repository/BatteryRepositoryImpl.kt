@@ -51,6 +51,9 @@ class BatteryRepositoryImpl @Inject constructor(
     override fun getReadingsSince(since: Long): Flow<List<BatteryReading>> =
         readingDao.getReadingsSince(since).map { list -> list.map { it.toDomain() } }
 
+    override fun getReadingsBetween(start: Long, end: Long): Flow<List<BatteryReading>> =
+        readingDao.getReadingsBetween(start, end).map { list -> list.map { it.toDomain() } }
+
     override suspend fun getLatestReading(): BatteryReading? =
         readingDao.getLatestReading()?.toDomain()
 
@@ -150,6 +153,9 @@ class BatteryRepositoryImpl @Inject constructor(
     // endregion
 
     // region Discharge events
+
+    override suspend fun getDischargeEventById(id: Long): DischargeEvent? =
+        dischargeDao.getById(id)?.toDomain()
 
     override suspend fun startDischargeEvent(startPercent: Int, startChargeCounter: Int?): Long =
         dischargeDao.insert(

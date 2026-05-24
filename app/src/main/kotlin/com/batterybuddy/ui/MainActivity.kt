@@ -36,6 +36,8 @@ import com.batterybuddy.data.repository.BatteryRepository
 import com.batterybuddy.ui.dashboard.DashboardScreen
 import com.batterybuddy.ui.dashboard.DashboardViewModel
 import com.batterybuddy.ui.education.EducationScreen
+import com.batterybuddy.ui.graph.SessionGraphScreen
+import com.batterybuddy.ui.graph.SessionGraphViewModel
 import com.batterybuddy.ui.trends.TrendsScreen
 import com.batterybuddy.ui.trends.TrendsViewModel
 import com.batterybuddy.ui.chargers.ChargerIntelligenceScreen
@@ -96,6 +98,7 @@ class MainActivity : ComponentActivity() {
     private val trendsViewModel: TrendsViewModel by viewModels()
     private val chargerViewModel: ChargerIntelligenceViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private val sessionGraphViewModel: SessionGraphViewModel by viewModels()
     private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -116,13 +119,17 @@ class MainActivity : ComponentActivity() {
             var showNotificationRationale by remember { mutableStateOf(shouldRequestNotificationPermission()) }
 
             BatteryBuddyTheme {
+                var graphSessionId by remember { mutableStateOf(-1L) }
+                var graphIsCharge by remember { mutableStateOf(true) }
+                var backDestination by remember { mutableStateOf(AppDestination.Live) }
+
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     topBar = {
                         if (hasCompletedOnboarding) {
                             AppTopBar(
                                 destination = destination,
-                                onBack = { destination = AppDestination.Live },
+                                onBack = { destination = backDestination },
                                 onOpenSchool = { destination = AppDestination.School },
                                 onOpenSettings = { destination = AppDestination.Settings }
                             )
@@ -166,10 +173,24 @@ class MainActivity : ComponentActivity() {
                         } else {
                             when (destination) {
                                 AppDestination.Live -> DashboardScreen(dashboardViewModel) { destination = AppDestination.School }
-                                AppDestination.History -> TrendsScreen(trendsViewModel) { destination = AppDestination.School }
+                                AppDestination.History -> TrendsScreen(
+                                    viewModel = trendsViewModel,
+                                    onNavigateToEducation = { destination = AppDestination.School },
+                                    onViewGraph = { id, isCharge ->
+                                        graphSessionId = id
+                                        graphIsCharge = isCharge
+                                        backDestination = AppDestination.History
+                                        destination = AppDestination.SessionGraph
+                                    }
+                                )
                                 AppDestination.Chargers -> ChargerIntelligenceScreen(chargerViewModel) { destination = AppDestination.School }
                                 AppDestination.School -> EducationScreen()
                                 AppDestination.Settings -> SettingsScreen(settingsViewModel)
+                                AppDestination.SessionGraph -> SessionGraphScreen(
+                                    viewModel = sessionGraphViewModel,
+                                    sessionId = graphSessionId,
+                                    isCharge = graphIsCharge
+                                )
                             }
                         }
                     }
@@ -249,7 +270,8 @@ private enum class AppDestination(val title: String, val isPrimary: Boolean) {
     History("History", true),
     Chargers("Chargers", true),
     School("Battery School", false),
-    Settings("Settings", false)
+    Settings("Settings", false),
+    SessionGraph("Session Graph", false)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

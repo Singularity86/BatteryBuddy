@@ -51,7 +51,8 @@ import kotlin.math.max
 @Composable
 fun TrendsScreen(
     viewModel: TrendsViewModel,
-    onNavigateToEducation: () -> Unit
+    onNavigateToEducation: () -> Unit,
+    onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -71,13 +72,16 @@ fun TrendsScreen(
                     Text("No sessions recorded yet. Start charging to see trends.")
                 }
             }
-            is TrendsUiState.Content -> TrendsContent(state)
+            is TrendsUiState.Content -> TrendsContent(state, onViewGraph)
         }
     }
 }
 
 @Composable
-fun TrendsContent(state: TrendsUiState.Content) {
+fun TrendsContent(
+    state: TrendsUiState.Content,
+    onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
+) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             CalibrationGuidanceCard(state.completedChargeSessionCount)
@@ -104,11 +108,13 @@ fun TrendsContent(state: TrendsUiState.Content) {
                 when (item) {
                     is HistoryItem.Charge -> SessionWearItem(
                         session = item.session,
-                        isCurrent = item.session.id == state.currentChargeSessionId
+                        isCurrent = item.session.id == state.currentChargeSessionId,
+                        onViewGraph = { onViewGraph(item.session.id, true) }
                     )
                     is HistoryItem.Discharge -> DischargeEventItem(
                         event = item.event,
-                        isCurrent = item.event.id == state.currentDischargeEventId
+                        isCurrent = item.event.id == state.currentDischargeEventId,
+                        onViewGraph = { onViewGraph(item.event.id, false) }
                     )
                 }
             }
@@ -141,7 +147,11 @@ fun CalibrationGuidanceCard(completedSessions: Int) {
 }
 
 @Composable
-fun SessionWearItem(session: ChargeSession, isCurrent: Boolean) {
+fun SessionWearItem(
+    session: ChargeSession,
+    isCurrent: Boolean,
+    onViewGraph: () -> Unit = {}
+) {
     val isInterrupted = session.isOpen && !isCurrent
     var expanded by remember { mutableStateOf(false) }
     val cost = session.displayWearCost()
@@ -149,7 +159,7 @@ fun SessionWearItem(session: ChargeSession, isCurrent: Boolean) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = !isCurrent && !session.isOpen) { expanded = !expanded },
+            .clickable { onViewGraph() },
         elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrent) 4.dp else 2.dp),
         colors = if (isCurrent) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
@@ -221,17 +231,21 @@ fun SessionWearItem(session: ChargeSession, isCurrent: Boolean) {
                             )
                         }
                     }
-                    // Expand chevron only for completed sessions
+                    // Chevron to toggle detail drill-down (completed sessions only)
                     if (!isCurrent && !session.isOpen) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .rotate(if (expanded) 180f else 0f)
-                        )
+                        androidx.compose.material3.IconButton(
+                            onClick = { expanded = !expanded },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = if (expanded) "Collapse" else "Expand",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(if (expanded) 180f else 0f)
+                            )
+                        }
                     }
                 }
             }
@@ -322,59 +336,126 @@ private fun DetailRow(label: String, value: String, valueColor: Color? = null) {
 }
 
 @Composable
-fun DischargeEventItem(event: DischargeEvent, isCurrent: Boolean) {
+fun DischargeEventItem(
+    event: DischargeEvent,
+    isCurrent: Boolean,
+    onViewGraph: () -> Unit = {}
+) {
     val isInterrupted = event.isOpen && !isCurrent
+    var expanded by remember { mutableStateOf(false) }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onViewGraph() },
         elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrent) 4.dp else 1.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isCurrent) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                              else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
-        Row(
-            modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${event.startPercent}% → ${event.endPercent ?: if (isCurrent) "Active" else "Unknown"}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (isCurrent || isInterrupted) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = if (isCurrent) MaterialTheme.colorScheme.secondary
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    if (isCurrent) "TRACKING" else "INTERRUPTED",
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isCurrent) MaterialTheme.colorScheme.onSecondary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
                     Text(
-                        text = "${event.startPercent}% → ${event.endPercent ?: if (isCurrent) "Active" else "Unknown"}",
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = "Discharge · ${formatDurationMinutes(event.displayDurationMinutes())}",
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (isCurrent || isInterrupted) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = if (isCurrent) MaterialTheme.colorScheme.secondary
-                                    else MaterialTheme.colorScheme.surfaceVariant
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (event.hasAnomalousBackground) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "High Background Drain",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(2.dp))
+                    }
+                    if (!isCurrent && !event.isOpen) {
+                        androidx.compose.material3.IconButton(
+                            onClick = { expanded = !expanded },
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            Text(
-                                if (isCurrent) "TRACKING" else "INTERRUPTED",
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isCurrent) MaterialTheme.colorScheme.onSecondary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = if (expanded) "Collapse" else "Expand",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(if (expanded) 180f else 0f)
                             )
                         }
                     }
                 }
-                Text(
-                    text = "Discharge · ${formatDurationMinutes(event.displayDurationMinutes())}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
-            if (event.hasAnomalousBackground) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "High Background Drain",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
+
+            AnimatedVisibility(visible = expanded) {
+                Column {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                    DischargeDetailGrid(event)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DischargeDetailGrid(event: DischargeEvent) {
+    val dateFormat = remember { java.text.SimpleDateFormat("MMM d, yyyy · h:mm a", java.util.Locale.getDefault()) }
+    val startStr = remember(event.startTimestamp) { dateFormat.format(java.util.Date(event.startTimestamp)) }
+    val endStr = event.endTimestamp?.let { remember(it) { dateFormat.format(java.util.Date(it)) } }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        DetailRow("Started", startStr)
+        if (endStr != null) DetailRow("Ended", endStr)
+        event.percentDepleted?.let { DetailRow("Depleted", "$it%") }
+        event.durationMinutes?.let { DetailRow("Duration", formatDurationMinutes(it)) }
+        event.depletionRateMahPerHour?.let {
+            DetailRow("Drain rate", "%.0f mAh/h".format(it))
+        }
+        event.averageCurrentMicroAmps?.let {
+            if (it != 0) DetailRow("Avg current", "${Math.abs(it / 1000)} mA")
+        }
+        if (event.hasAnomalousBackground) {
+            Spacer(Modifier.height(2.dp))
+            Surface(
+                shape = MaterialTheme.shapes.extraSmall,
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Text(
+                    "Anomalous background drain detected",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
         }

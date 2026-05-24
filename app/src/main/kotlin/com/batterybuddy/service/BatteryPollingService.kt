@@ -18,6 +18,8 @@ import com.batterybuddy.data.model.ChargeState
 import com.batterybuddy.data.preferences.UserPreferencesStore
 import com.batterybuddy.data.repository.BatteryRepository
 import com.batterybuddy.ui.MainActivity
+import com.batterybuddy.widget.BatteryWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -132,6 +134,9 @@ class BatteryPollingService : Service() {
         )
 
         repository.insertReading(reading)
+        GlanceAppWidgetManager(this@BatteryPollingService)
+            .getGlanceIds(BatteryWidget::class.java)
+            .forEach { BatteryWidget().update(this@BatteryPollingService, it) }
 
         if (activeSessionId > 0) {
             val isAbusive = batteryStatus.tempTenthsC > tempThreshold * 10
