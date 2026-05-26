@@ -172,7 +172,16 @@ class MainActivity : ComponentActivity() {
                             }
                         } else {
                             when (destination) {
-                                AppDestination.Live -> DashboardScreen(dashboardViewModel) { destination = AppDestination.School }
+                                AppDestination.Live -> DashboardScreen(
+                                    viewModel = dashboardViewModel,
+                                    onNavigateToEducation = { destination = AppDestination.School },
+                                    onViewGraph = { id, isCharge ->
+                                        graphSessionId = id
+                                        graphIsCharge = isCharge
+                                        backDestination = AppDestination.Live
+                                        destination = AppDestination.SessionGraph
+                                    }
+                                )
                                 AppDestination.History -> TrendsScreen(
                                     viewModel = trendsViewModel,
                                     onNavigateToEducation = { destination = AppDestination.School },

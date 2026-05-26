@@ -1,5 +1,6 @@
 package com.batterybuddy.ui.dashboard
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,7 +21,8 @@ import com.batterybuddy.data.model.ChargeState
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onNavigateToEducation: () -> Unit
+    onNavigateToEducation: () -> Unit,
+    onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -61,7 +63,12 @@ fun DashboardScreen(
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    DashboardContent(state.reading)
+                    DashboardContent(
+                        reading = state.reading,
+                        chargeSessionId = state.chargeSessionId,
+                        dischargeEventId = state.dischargeEventId,
+                        onViewGraph = onViewGraph
+                    )
                 }
             }
         }
@@ -69,11 +76,17 @@ fun DashboardScreen(
 }
 
 @Composable
-fun DashboardContent(reading: BatteryReading) {
+fun DashboardContent(
+    reading: BatteryReading,
+    chargeSessionId: Long? = null,
+    dischargeEventId: Long? = null,
+    onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
+) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     val isCharging = reading.chargeSource != ChargeSource.NONE &&
         (reading.chargeState == ChargeState.CHARGING || reading.chargeState == ChargeState.FULL)
+    val graphId = if (isCharging) chargeSessionId else dischargeEventId
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -88,10 +101,11 @@ fun DashboardContent(reading: BatteryReading) {
 
         Surface(
             shape = MaterialTheme.shapes.medium,
-            color = if (isCharging) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+            color = if (isCharging) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+            modifier = if (graphId != null) Modifier.clickable { onViewGraph(graphId, isCharging) } else Modifier
         ) {
             Text(
-                text = if (isCharging) "CHARGING" else "DISCHARGING",
+                text = if (isCharging) "CHARGING ↗" else "DISCHARGING ↗",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.ExtraBold,

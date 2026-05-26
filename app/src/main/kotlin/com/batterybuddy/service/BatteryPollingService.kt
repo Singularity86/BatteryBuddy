@@ -134,9 +134,11 @@ class BatteryPollingService : Service() {
         )
 
         repository.insertReading(reading)
-        GlanceAppWidgetManager(this@BatteryPollingService)
-            .getGlanceIds(BatteryWidget::class.java)
-            .forEach { BatteryWidget().update(this@BatteryPollingService, it) }
+        try {
+            GlanceAppWidgetManager(this@BatteryPollingService)
+                .getGlanceIds(BatteryWidget::class.java)
+                .forEach { BatteryWidget().update(this@BatteryPollingService, it) }
+        } catch (_: Exception) { }
 
         if (activeSessionId > 0) {
             val isAbusive = batteryStatus.tempTenthsC > tempThreshold * 10

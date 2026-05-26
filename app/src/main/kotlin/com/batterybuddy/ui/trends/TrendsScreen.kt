@@ -200,7 +200,7 @@ fun SessionWearItem(
                         }
                     }
                     Text(
-                        text = "${session.chargeSource.name} · ${formatDurationMinutes(session.displayDurationMinutes())}",
+                        text = "${session.chargerLabel ?: session.chargeSource.name} · ${formatDurationMinutes(session.displayDurationMinutes())}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
