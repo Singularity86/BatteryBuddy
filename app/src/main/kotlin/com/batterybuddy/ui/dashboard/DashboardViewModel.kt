@@ -2,6 +2,8 @@ package com.batterybuddy.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.batterybuddy.data.analysis.DrainCalculator
+import com.batterybuddy.data.analysis.DrainSummary
 import com.batterybuddy.data.battery.BatteryStateProvider
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.repository.BatteryRepository
@@ -28,18 +30,25 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = combine(
         batteryState.observe(),
         repository.observeLatestReading(),
-        repository.getLatestDischargeEvent()
-    ) { live, stored, latestDischarge ->
+        repository.getLatestDischargeEvent(),
+        repository.getReadingsSince(System.currentTimeMillis() - DRAIN_WINDOW_MS)
+    ) { live, stored, latestDischarge, recentReadings ->
         DashboardUiState.Content(
             reading          = live,
             chargeSessionId  = stored?.sessionId,
-            dischargeEventId = latestDischarge?.takeIf { it.isOpen }?.id
+            dischargeEventId = latestDischarge?.takeIf { it.isOpen }?.id,
+            drain            = DrainCalculator.summarize(recentReadings, live.batteryPercent)
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = DashboardUiState.Loading
     )
+
+    private companion object {
+        // Far enough back to find the last full charge for most usage patterns.
+        const val DRAIN_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
+    }
 }
 
 sealed interface DashboardUiState {
@@ -47,6 +56,7 @@ sealed interface DashboardUiState {
     data class Content(
         val reading: BatteryReading,
         val chargeSessionId: Long? = null,
-        val dischargeEventId: Long? = null
+        val dischargeEventId: Long? = null,
+        val drain: DrainSummary? = null
     ) : DashboardUiState
 }

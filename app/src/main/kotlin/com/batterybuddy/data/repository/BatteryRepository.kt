@@ -43,6 +43,7 @@ interface BatteryRepository {
     suspend fun closeOpenChargeSessions(endPercent: Int): List<ChargeSession>
 
     suspend fun getLatestOpenChargeSession(): ChargeSession?
+    suspend fun getCompletedSessionsSince(since: Long): List<ChargeSession>
     fun getAllChargeSessions(): Flow<List<ChargeSession>>
     fun getLatestChargeSession(): Flow<ChargeSession?>
     suspend fun updateChargerLabelForFingerprint(fingerprint: String, label: String)

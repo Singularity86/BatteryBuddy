@@ -55,11 +55,23 @@ class BatteryTruthApp : Application(), Configuration.Provider {
             description = "Monthly health reports and post-session summaries"
             nm.createNotificationChannel(this)
         }
+
+        // Its own channel so the charge nudge can be silenced without losing
+        // the genuine warnings on the alerts channel.
+        NotificationChannel(
+            CHANNEL_CHARGE_TARGET,
+            "Charge Target",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "A nudge when the battery reaches your chosen charge level"
+            nm.createNotificationChannel(this)
+        }
     }
 
     companion object {
-        const val CHANNEL_MONITORING = "battery_monitoring"
-        const val CHANNEL_ALERTS     = "battery_alerts"
-        const val CHANNEL_REPORTS    = "battery_reports"
+        const val CHANNEL_MONITORING    = "battery_monitoring"
+        const val CHANNEL_ALERTS        = "battery_alerts"
+        const val CHANNEL_REPORTS       = "battery_reports"
+        const val CHANNEL_CHARGE_TARGET = "battery_charge_target"
     }
 }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.core.content.ContextCompat
+import com.batterybuddy.data.analysis.SessionRanker
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.model.ChargeSource
 import com.batterybuddy.data.model.ChargeState
@@ -80,7 +81,13 @@ class BatteryStateReceiver : BroadcastReceiver() {
         // Whichever sessions this call actually closes are the ones we report on.
         repository.closeOpenChargeSessions(percent)
             .firstOrNull()
-            ?.let { notifications.showSessionSummary(it) }
+            ?.let { closed ->
+                val recent = repository.getCompletedSessionsSince(
+                    System.currentTimeMillis() - RANKING_WINDOW_MS
+                )
+                val standing = SessionRanker.rankByTemperature(closed, recent)
+                notifications.showSessionSummary(closed, standing?.describe())
+            }
 
         repository.insertReading(readCurrentReading(context))
         repository.startDischargeEvent(
@@ -133,5 +140,10 @@ class BatteryStateReceiver : BroadcastReceiver() {
             chargerType = null,
             chargeProtocolLabel = null
         )
+    }
+
+    private companion object {
+        /** Charges are compared against the last month of history. */
+        const val RANKING_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
     }
 }

@@ -49,6 +49,7 @@ fun ChargerIntelligenceScreen(viewModel: ChargerIntelligenceViewModel) {
                 is ChargerUiState.Empty -> ChargerEmptyState(modifier = Modifier.align(Alignment.Center))
                 is ChargerUiState.Content -> ChargerList(
                     chargers = state.chargers,
+                    headline = state.headline,
                     onRename = { fp, label -> viewModel.saveChargerLabel(fp, label) }
                 )
             }
@@ -122,6 +123,7 @@ private fun ChargerEmptyState(modifier: Modifier = Modifier) {
 @Composable
 fun ChargerList(
     chargers: List<ChargerStats>,
+    headline: String? = null,
     onRename: (fingerprint: String, label: String) -> Unit = { _, _ -> }
 ) {
     LazyColumn(
@@ -129,6 +131,24 @@ fun ChargerList(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+        headline?.let {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Text(
+                        text = it,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
         items(chargers, key = { it.fingerprint }) { charger ->
             ChargerCard(charger, onRename = { label -> onRename(charger.fingerprint, label) })
         }

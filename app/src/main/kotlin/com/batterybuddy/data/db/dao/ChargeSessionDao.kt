@@ -30,6 +30,13 @@ interface ChargeSessionDao {
     @Query("SELECT * FROM charge_sessions ORDER BY start_timestamp ASC")
     suspend fun getAllSessionsSnapshot(): List<ChargeSessionEntity>
 
+    @Query("""
+        SELECT * FROM charge_sessions
+        WHERE end_timestamp IS NOT NULL AND start_timestamp >= :since
+        ORDER BY start_timestamp DESC
+    """)
+    suspend fun getCompletedSessionsSince(since: Long): List<ChargeSessionEntity>
+
     // Partial update during a live session — avoids overwriting immutable start
     // fields, and keeps peak/min/max as high- and low-water marks.
     //

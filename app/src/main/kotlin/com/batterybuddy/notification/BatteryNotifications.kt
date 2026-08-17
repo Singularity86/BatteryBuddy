@@ -60,6 +60,22 @@ class BatteryNotifications @Inject constructor(
         manager.notify(ID_THERMAL, notification)
     }
 
+    /**
+     * The one habit nudge the app actively recommends. Fired at most once per
+     * charge session, and phrased as an option rather than an instruction —
+     * charging to 100% is sometimes exactly what someone needs.
+     */
+    fun showChargeTargetReached(percent: Int) {
+        val notification = NotificationCompat.Builder(context, BatteryTruthApp.CHANNEL_CHARGE_TARGET)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle("Battery at $percent%")
+            .setContentText("A good place to unplug if you don't need a full charge today.")
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent())
+            .build()
+        manager.notify(ID_CHARGE_TARGET, notification)
+    }
+
     fun showOvernightHoldAlert(elapsedMinutes: Int) {
         val notification = NotificationCompat.Builder(context, BatteryTruthApp.CHANNEL_ALERTS)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
@@ -73,17 +89,26 @@ class BatteryNotifications @Inject constructor(
         manager.notify(ID_OVERNIGHT, notification)
     }
 
-    /** Post-charge summary. Fired once, by whichever component actually closed the session. */
-    fun showSessionSummary(session: ChargeSession) {
+    /**
+     * Post-charge summary. Fired once, by whichever component actually closed the
+     * session. [comparison] is supplied only when the charge stood out against
+     * recent history — most charges are unremarkable and should read that way.
+     */
+    fun showSessionSummary(session: ChargeSession, comparison: String? = null) {
         val endPercent = session.endPercent ?: return
         val band = ChargeMath.wearBand(session.weightedCycleCost ?: 0f)
         val duration = formatDuration(session.durationMinutes ?: 0)
         val charger = session.chargerLabel ?: session.chargeSource.name.lowercase()
+        val summary = "${session.startPercent}% → $endPercent% in $duration · $charger"
 
         val notification = NotificationCompat.Builder(context, BatteryTruthApp.CHANNEL_REPORTS)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle("Charge complete · ${band.label}")
-            .setContentText("${session.startPercent}% → $endPercent% in $duration · $charger")
+            .setContentText(comparison ?: summary)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(if (comparison != null) "$summary\n$comparison" else summary)
+            )
             .setAutoCancel(true)
             .setContentIntent(openAppIntent())
             .build()
@@ -105,5 +130,6 @@ class BatteryNotifications @Inject constructor(
         private const val ID_THERMAL = 1002
         private const val ID_OVERNIGHT = 1003
         private const val ID_SESSION_SUMMARY = 1004
+        private const val ID_CHARGE_TARGET = 1005
     }
 }

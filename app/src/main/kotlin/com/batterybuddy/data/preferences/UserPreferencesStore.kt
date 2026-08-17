@@ -30,6 +30,7 @@ class UserPreferencesStore @Inject constructor(
         val OVERNIGHT_HOLD_THRESHOLD_MIN = intPreferencesKey("overnight_hold_threshold_min")
         val HAS_COMPLETED_ONBOARDING     = booleanPreferencesKey("has_completed_onboarding")
         val BG_POLLING_INTERVAL_MIN      = intPreferencesKey("bg_polling_interval_min")
+        val CHARGE_ALARM_PERCENT         = intPreferencesKey("charge_alarm_percent")
         val CHARGER_LABELS_ENCODED       = stringPreferencesKey("charger_labels_encoded")
         val ACTIVE_BATTERY_ID            = longPreferencesKey("active_battery_id")
         val LAST_BOOT_ID                 = longPreferencesKey("last_boot_id")
@@ -67,6 +68,15 @@ class UserPreferencesStore @Inject constructor(
     val backgroundPollingIntervalMinutes: Flow<Int> =
         context.dataStore.data.map { it[Keys.BG_POLLING_INTERVAL_MIN] ?: 15 }
 
+    /**
+     * Charge level at which to nudge the user to unplug. 0 disables the alarm.
+     *
+     * Defaults on at 80% because it is the one habit change the app actively
+     * recommends, and it costs at most one quiet notification per charge.
+     */
+    val chargeAlarmPercent: Flow<Int> =
+        context.dataStore.data.map { it[Keys.CHARGE_ALARM_PERCENT] ?: DEFAULT_CHARGE_ALARM_PERCENT }
+
     // Charger labels keyed by fingerprint. Stored as "fp\tlabel\nfp\tlabel…"
     val chargerLabels: Flow<Map<String, String>> =
         context.dataStore.data.map { decodeLabels(it[Keys.CHARGER_LABELS_ENCODED] ?: "") }
@@ -90,6 +100,10 @@ class UserPreferencesStore @Inject constructor(
 
     suspend fun setBackgroundPollingIntervalMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.BG_POLLING_INTERVAL_MIN] = minutes }
+
+    /** @param percent 0 to switch the alarm off entirely. */
+    suspend fun setChargeAlarmPercent(percent: Int) =
+        context.dataStore.edit { it[Keys.CHARGE_ALARM_PERCENT] = percent.coerceIn(0, 100) }
 
     suspend fun setActiveBatteryId(id: Long) =
         context.dataStore.edit { it[Keys.ACTIVE_BATTERY_ID] = id }
@@ -117,4 +131,8 @@ class UserPreferencesStore @Inject constructor(
 
     private fun encodeLabels(map: Map<String, String>): String =
         map.entries.joinToString("\n") { "${it.key}\t${it.value}" }
+
+    companion object {
+        const val DEFAULT_CHARGE_ALARM_PERCENT = 80
+    }
 }

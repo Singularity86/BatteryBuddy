@@ -62,6 +62,10 @@ class BatteryPollingService : Service() {
     /** True once we have a real kernel-backed charger identity, not a power-bucket guess. */
     private var chargerIdentified = false
 
+    /** Charge level when this session began, and whether the target nudge already fired. */
+    private var sessionStartPercent = 0
+    private var chargeTargetNotified = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -106,6 +110,7 @@ class BatteryPollingService : Service() {
             ?.takeIf { it.chargeSource != ChargeSource.NONE }
         activeSessionId = openSession?.id
             ?: repository.startChargeSession(status.percent, status.chargeSource)
+        sessionStartPercent = openSession?.startPercent ?: status.percent
 
         while (currentCoroutineContext().isActive) {
             val latest = collectAndStore()
@@ -169,7 +174,22 @@ class BatteryPollingService : Service() {
             checkOvernightHold(status.percent, holdThreshold)
         }
 
+        checkChargeTarget(status.percent, prefs.chargeAlarmPercent.first())
         return status
+    }
+
+    /**
+     * Nudges once per session when the chosen charge level is reached. Skipped
+     * entirely if the phone was already above the target when it was plugged in —
+     * topping up from 85% shouldn't trigger an immediate "you're at 80%".
+     */
+    private fun checkChargeTarget(percent: Int, targetPercent: Int) {
+        if (targetPercent <= 0 || chargeTargetNotified) return
+        if (sessionStartPercent >= targetPercent) return
+        if (percent < targetPercent) return
+
+        chargeTargetNotified = true
+        notifications.showChargeTargetReached(percent)
     }
 
     private suspend fun refreshWidget() {

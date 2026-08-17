@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,18 +53,23 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     var tempThreshold by remember { mutableStateOf(state.tempAlertThresholdCelsius.toString()) }
     var holdThreshold by remember { mutableStateOf(state.overnightHoldThresholdMinutes.toString()) }
     var pollingInterval by remember { mutableStateOf(state.backgroundPollingIntervalMinutes.toString()) }
+    var chargeAlarmEnabled by remember { mutableStateOf(state.chargeAlarmPercent > 0) }
+    var chargeAlarmPercent by remember { mutableStateOf(state.chargeAlarmPercent.takeIf { it > 0 }?.toString() ?: "80") }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(
         state.deviceModel, state.ratedMah, state.tempAlertThresholdCelsius,
-        state.overnightHoldThresholdMinutes, state.backgroundPollingIntervalMinutes
+        state.overnightHoldThresholdMinutes, state.backgroundPollingIntervalMinutes,
+        state.chargeAlarmPercent
     ) {
         deviceModel = state.deviceModel
         ratedMah = state.ratedMah?.toString().orEmpty()
         tempThreshold = state.tempAlertThresholdCelsius.toString()
         holdThreshold = state.overnightHoldThresholdMinutes.toString()
         pollingInterval = state.backgroundPollingIntervalMinutes.toString()
+        chargeAlarmEnabled = state.chargeAlarmPercent > 0
+        if (state.chargeAlarmPercent > 0) chargeAlarmPercent = state.chargeAlarmPercent.toString()
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -104,6 +110,45 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 modifier = Modifier.align(Alignment.End)
             ) {
                 Text("Save device")
+            }
+        }
+
+        SettingsCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Unplug reminder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "One notification when the battery reaches your target.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = chargeAlarmEnabled,
+                    onCheckedChange = { enabled ->
+                        chargeAlarmEnabled = enabled
+                        viewModel.updateChargeAlarmPercent(
+                            if (enabled) chargeAlarmPercent.toIntOrNull() ?: 80 else 0
+                        )
+                    }
+                )
+            }
+            if (chargeAlarmEnabled) {
+                Spacer(Modifier.height(12.dp))
+                NumberField("Remind me at (%)", chargeAlarmPercent) { chargeAlarmPercent = it }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        chargeAlarmPercent.toIntOrNull()?.let(viewModel::updateChargeAlarmPercent)
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Save reminder")
+                }
             }
         }
 

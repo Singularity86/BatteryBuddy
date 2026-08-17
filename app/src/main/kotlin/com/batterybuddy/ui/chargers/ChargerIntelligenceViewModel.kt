@@ -51,7 +51,7 @@ class ChargerIntelligenceViewModel @Inject constructor(
                     buildStats(fingerprint, group, history, userLabels)
                 }
                 .sortedByDescending { it.coolRunningScore }
-            ChargerUiState.Content(stats)
+            ChargerUiState.Content(stats, headline = comparativeHeadline(stats))
         }
     }.stateIn(
         scope = viewModelScope,
@@ -114,6 +114,33 @@ class ChargerIntelligenceViewModel @Inject constructor(
             coolRunningScore       = (100f - tempPenalty - abusivePenalty).coerceIn(0f, 100f),
             sessions               = sessions
         )
+    }
+
+    /**
+     * The point of tracking chargers is the comparison, not the individual
+     * numbers. Says nothing until there are at least two chargers with enough
+     * samples for the difference between them to be real.
+     */
+    private fun comparativeHeadline(stats: List<ChargerStats>): String? {
+        val comparable = stats.filter { it.sessionCount >= MIN_SAMPLES_FOR_COMPARISON }
+        if (comparable.size < 2) return null
+
+        val fastest = comparable.filter { it.averageWatts > 0f }.maxByOrNull { it.averageWatts }
+        val hottest = comparable.maxByOrNull { it.averagePeakTempCelsius }
+        val slowest = comparable.filter { it.averageWatts > 0f }.minByOrNull { it.averageWatts }
+
+        if (hottest != null && slowest != null && hottest.fingerprint == slowest.fingerprint &&
+            fastest != null && fastest.fingerprint != hottest.fingerprint
+        ) {
+            return "${hottest.label} is your slowest and hottest charger. ${fastest.label} is the kindest to your battery."
+        }
+        if (fastest != null && hottest != null && fastest.fingerprint != hottest.fingerprint) {
+            return "${fastest.label} charges fastest. ${hottest.label} runs hottest."
+        }
+        if (fastest != null) {
+            return "${fastest.label} charges fastest at %.0f W.".format(fastest.averageWatts)
+        }
+        return null
     }
 
     private fun defaultLabel(source: ChargeSource): String =
@@ -179,11 +206,16 @@ class ChargerIntelligenceViewModel @Inject constructor(
         const val ABUSIVE_TEMP_C = 38f
         const val TEMP_PENALTY_PER_DEGREE = 5f
         const val ABUSIVE_PENALTY_WEIGHT = 50f
+        const val MIN_SAMPLES_FOR_COMPARISON = 3
     }
 }
 
 sealed interface ChargerUiState {
     object Loading : ChargerUiState
     object Empty : ChargerUiState
-    data class Content(val chargers: List<ChargerStats>) : ChargerUiState
+    data class Content(
+        val chargers: List<ChargerStats>,
+        /** Plain-language comparison, present only once a comparison is warranted. */
+        val headline: String? = null
+    ) : ChargerUiState
 }

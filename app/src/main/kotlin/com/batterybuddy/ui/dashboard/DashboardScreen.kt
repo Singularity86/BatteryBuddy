@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.batterybuddy.data.analysis.DrainSummary
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.model.ChargeSource
 import com.batterybuddy.data.model.ChargeState
@@ -48,6 +49,7 @@ fun DashboardScreen(
                         reading = state.reading,
                         chargeSessionId = state.chargeSessionId,
                         dischargeEventId = state.dischargeEventId,
+                        drain = state.drain,
                         onViewGraph = onViewGraph
                     )
                 }
@@ -61,6 +63,7 @@ fun DashboardContent(
     reading: BatteryReading,
     chargeSessionId: Long? = null,
     dischargeEventId: Long? = null,
+    drain: DrainSummary? = null,
     onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
 ) {
     val configuration = LocalConfiguration.current
@@ -135,6 +138,11 @@ fun DashboardContent(
             )
         }
         
+        if (drain != null) {
+            Spacer(modifier = Modifier.height(if (isLandscape) 12.dp else 24.dp))
+            DrainSinceFullCard(drain)
+        }
+
         if (isCharging) {
             Spacer(modifier = Modifier.height(if (isLandscape) 12.dp else 24.dp))
             val label = reading.chargeProtocolLabel ?: reading.chargerType ?: "Standard Charger"
@@ -154,6 +162,94 @@ fun DashboardContent(
                 )
             }
         }
+    }
+}
+
+/**
+ * Drain split by screen state. Screen-off drain is the number worth looking at:
+ * it's what the phone costs while you aren't using it, and the place a
+ * misbehaving app actually shows up.
+ */
+@Composable
+private fun DrainSinceFullCard(drain: DrainSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = if (drain.anchoredToFullCharge) "Since last full charge" else "Recent usage",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "${drain.percentUsed}% used over ${formatMinutes(drain.screenOnMinutes + drain.screenOffMinutes)}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            drain.estimatedHoursRemaining?.let { hours ->
+                Text(
+                    text = "About ${formatHours(hours)} left at this rate",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                DrainStat(
+                    label = "Screen on",
+                    time = formatMinutes(drain.screenOnMinutes),
+                    rate = drain.screenOnDrainPerHour
+                )
+                DrainStat(
+                    label = "Screen off",
+                    time = formatMinutes(drain.screenOffMinutes),
+                    rate = drain.screenOffDrainPerHour
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DrainStat(label: String, time: String, rate: Float?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(
+            text = rate?.let { "%.1f%%/h".format(it) } ?: "—",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = time,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatMinutes(minutes: Long): String {
+    val hours = minutes / 60
+    val mins = minutes % 60
+    return when {
+        hours > 0 && mins > 0 -> "${hours}h ${mins}m"
+        hours > 0             -> "${hours}h"
+        else                  -> "${mins}m"
+    }
+}
+
+private fun formatHours(hours: Float): String {
+    val whole = hours.toInt()
+    val mins = ((hours - whole) * 60).toInt()
+    return when {
+        whole > 0 && mins > 0 -> "${whole}h ${mins}m"
+        whole > 0             -> "${whole}h"
+        else                  -> "${mins}m"
     }
 }
 

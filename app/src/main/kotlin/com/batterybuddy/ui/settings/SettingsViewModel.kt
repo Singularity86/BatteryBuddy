@@ -39,9 +39,9 @@ class SettingsViewModel @Inject constructor(
         prefs.tempAlertThresholdCelsius,
         prefs.overnightHoldThresholdMinutes,
         prefs.backgroundPollingIntervalMinutes,
-        activeRatedMah
-    ) { model, tempC, holdMinutes, pollMinutes, ratedMah ->
-        MonitoringSettings(model, tempC, holdMinutes, pollMinutes, ratedMah)
+        prefs.chargeAlarmPercent
+    ) { model, tempC, holdMinutes, pollMinutes, alarmPercent ->
+        MonitoringSettings(model, tempC, holdMinutes, pollMinutes, alarmPercent)
     }
 
     private val diagnostics = combine(
@@ -51,14 +51,16 @@ class SettingsViewModel @Inject constructor(
 
     val uiState: StateFlow<SettingsUiState> = combine(
         monitoring,
+        activeRatedMah,
         diagnostics
-    ) { settings, (reading, session) ->
+    ) { settings, ratedMah, (reading, session) ->
         SettingsUiState(
             deviceModel                      = settings.deviceModel,
-            ratedMah                         = settings.ratedMah,
+            ratedMah                         = ratedMah,
             tempAlertThresholdCelsius        = settings.tempAlertThresholdCelsius,
             overnightHoldThresholdMinutes    = settings.overnightHoldThresholdMinutes,
             backgroundPollingIntervalMinutes = settings.backgroundPollingIntervalMinutes,
+            chargeAlarmPercent               = settings.chargeAlarmPercent,
             latestReading                    = reading,
             latestSession                    = session
         )
@@ -125,12 +127,19 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** @param percent 0 turns the nudge off. */
+    fun updateChargeAlarmPercent(percent: Int) {
+        viewModelScope.launch {
+            prefs.setChargeAlarmPercent(if (percent <= 0) 0 else percent.coerceIn(50, 100))
+        }
+    }
+
     private data class MonitoringSettings(
         val deviceModel: String,
         val tempAlertThresholdCelsius: Int,
         val overnightHoldThresholdMinutes: Int,
         val backgroundPollingIntervalMinutes: Int,
-        val ratedMah: Int?
+        val chargeAlarmPercent: Int
     )
 }
 
@@ -140,6 +149,7 @@ data class SettingsUiState(
     val tempAlertThresholdCelsius: Int = 38,
     val overnightHoldThresholdMinutes: Int = 120,
     val backgroundPollingIntervalMinutes: Int = 15,
+    val chargeAlarmPercent: Int = UserPreferencesStore.DEFAULT_CHARGE_ALARM_PERCENT,
     val latestReading: BatteryReading? = null,
     val latestSession: ChargeSession? = null
 )

@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.batterybuddy.data.analysis.ChargeMath
 import com.batterybuddy.data.analysis.WearBand
+import com.batterybuddy.data.battery.NativeHealthStatus
 import com.batterybuddy.data.model.ChargeSession
 import com.batterybuddy.data.model.DischargeEvent
 import com.batterybuddy.data.model.HealthSummary
@@ -96,11 +97,14 @@ fun TrendsContent(
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
+            DeviceFaultCard(state)
             CalibrationGuidanceCard(state.healthSummary, state.completedChargeSessionCount)
             Spacer(modifier = Modifier.height(12.dp))
             HealthSummaryCard(state)
             Spacer(modifier = Modifier.height(8.dp))
             LifetimeWearCard(state)
+            Spacer(modifier = Modifier.height(8.dp))
+            ReplacementOutlookCard(state)
             Spacer(modifier = Modifier.height(8.dp))
             OvernightHoldCard(state)
             Spacer(modifier = Modifier.height(8.dp))
@@ -569,25 +573,39 @@ fun HealthSummaryCard(state: TrendsUiState.Content) {
     }
 }
 
+/**
+ * Battery life used, framed against a horizon rather than as a running damage
+ * tally. A bare "cycles used" counter with no achievable target is the kind of
+ * thing that makes people anxious about charging their own phone; a percentage
+ * of an expected lifespan, with a plain-language reading, is actionable.
+ */
 @Composable
 fun LifetimeWearCard(state: TrendsUiState.Content) {
     val wear = state.lifetimeWear
     if (wear <= 0f && state.completedChargeSessionCount == 0) return
 
-    val remaining = (RATED_CYCLES - wear).coerceAtLeast(0f)
-    val progress = (wear / RATED_CYCLES).coerceIn(0f, 1f)
-    val wearColor = when {
-        progress > 0.6f -> Color(0xFFF44336)
-        progress > 0.3f -> Color(0xFFFF9800)
-        else            -> Color(0xFF4CAF50)
+    // Where the device counts real cycles, our weighted heuristic steps aside.
+    val measuredCycles = state.nativeCycleCount?.toFloat()
+    val cycles = measuredCycles ?: wear
+    val usedFraction = (cycles / RATED_CYCLES).coerceIn(0f, 1f)
+    val usedPercent = (usedFraction * 100).toInt()
+    val accent = when {
+        usedFraction > 0.85f -> Color(0xFFF44336)
+        usedFraction > 0.6f  -> Color(0xFFFF9800)
+        else                 -> Color(0xFF4CAF50)
+    }
+    val reading = when {
+        usedFraction > 0.85f -> "Approaching the end of a typical lifespan. Worth planning a replacement."
+        usedFraction > 0.6f  -> "Past the halfway mark, which is normal at this much use."
+        else                 -> "Comfortably within normal. Nothing here needs your attention."
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = wearColor.copy(alpha = 0.08f))
+        colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.08f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Lifetime Wear", style = MaterialTheme.typography.labelMedium)
+            Text("Battery life used", style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -595,29 +613,160 @@ fun LifetimeWearCard(state: TrendsUiState.Content) {
                 verticalAlignment = Alignment.Bottom
             ) {
                 Text(
-                    text = "%.1f cycles used".format(wear),
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "$usedPercent%",
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = wearColor
+                    color = accent
                 )
                 Text(
-                    text = "~%.0f remaining".format(remaining),
+                    text = "of a typical ${RATED_CYCLES.toInt()}-cycle lifespan",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(10.dp))
             LinearProgressIndicator(
-                progress = { progress },
+                progress = { usedFraction },
                 modifier = Modifier.fillMaxWidth(),
-                color = wearColor,
+                color = accent,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = reading,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = if (measuredCycles != null) {
+                    "Your device reports ${measuredCycles.toInt()} charge cycles."
+                } else {
+                    "Estimated from ${state.completedChargeSessionCount} charges on this battery."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (state.nativeHealthStatus == NativeHealthStatus.GOOD) {
+                Text(
+                    text = "Device self-check: no faults reported.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Answers "should I replace this?" with a measured trend rather than a vibe.
+ * Absent until there are enough full charges over enough weeks for a line
+ * through them to mean anything.
+ */
+@Composable
+fun ReplacementOutlookCard(state: TrendsUiState.Content) {
+    val projection = state.capacityProjection ?: return
+
+    val decline = -projection.changeMahPerMonth
+    val headline = when {
+        projection.monthsUntilThreshold == null ->
+            "No measurable decline yet"
+        projection.monthsUntilThreshold > 24f ->
+            "More than 2 years of normal use left"
+        else ->
+            "About ${formatMonths(projection.monthsUntilThreshold)} before replacement is worth considering"
+    }
+    val detail = if (projection.monthsUntilThreshold == null) {
+        "Capacity has held steady across ${projection.observationCount} full charges over " +
+            "${projection.spanDays} days. Nothing to act on."
+    } else {
+        "Losing roughly ${decline.toInt()} mAh per month. At that rate you'd reach " +
+            "${projection.thresholdMah} mAh — the point most people replace at — from today's " +
+            "${projection.currentCapacityMah} mAh."
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Replacement outlook", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = headline,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "Based on ${state.completedChargeSessionCount} sessions · rated ~$RATED_CYCLES cycles",
+                text = detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Projected from ${projection.observationCount} full charges over ${projection.spanDays} days.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun formatMonths(months: Float): String {
+    val rounded = months.toInt()
+    return when {
+        rounded >= 24 -> "${rounded / 12} years"
+        rounded >= 12 -> "a year and ${rounded - 12} months"
+        rounded <= 1  -> "a month"
+        else          -> "$rounded months"
+    }
+}
+
+/**
+ * The OS's own fault verdict, shown only when it is actually reporting a problem.
+ * This is a hardware fault flag, not a capacity figure — worth surfacing loudly
+ * precisely because it is measured rather than estimated.
+ */
+@Composable
+fun DeviceFaultCard(state: TrendsUiState.Content) {
+    val status = state.nativeHealthStatus ?: return
+    if (status == NativeHealthStatus.GOOD) return
+
+    val (headline, advice) = when (status) {
+        NativeHealthStatus.OVERHEAT ->
+            "Your device is reporting the battery as overheated" to
+                "Unplug it, take any case off, and let it cool. If this persists when the phone is idle and cool, have it looked at."
+        NativeHealthStatus.DEAD ->
+            "Your device is reporting the battery as failed" to
+                "This is a hardware fault reported by the phone itself, not an estimate. The battery needs replacing."
+        NativeHealthStatus.OVER_VOLTAGE ->
+            "Your device is reporting an over-voltage fault" to
+                "Try a different charger and cable. If it continues, stop using that charger and have the phone checked."
+        NativeHealthStatus.COLD ->
+            "Your device is reporting the battery as too cold" to
+                "Charging in the cold is hard on a battery. Let it warm up to room temperature first."
+        NativeHealthStatus.UNSPECIFIED_FAILURE ->
+            "Your device is reporting a battery fault" to
+                "The phone flagged a problem without naming it. Worth a service check if it keeps appearing."
+        NativeHealthStatus.GOOD -> return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = headline,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = advice,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
             )
         }
     }
