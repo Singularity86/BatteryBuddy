@@ -1,6 +1,6 @@
 package com.batterybuddy.data.model
 
-import kotlin.math.abs
+import com.batterybuddy.data.analysis.ChargeMath
 
 data class BatteryReading(
     val id: Long,
@@ -26,12 +26,6 @@ data class BatteryReading(
 
     // Prefer charger-side calculation when sysfs data available; fall back to battery-side approximation
     val chargingPowerWatts: Float
-        get() {
-            val cv = chargerVoltageMillivolts
-            val ci = chargerCurrentMaxMilliamps
-            return if (cv != null && ci != null && cv > 0 && ci > 0)
-                cv * ci / 1_000_000f
-            else
-                voltageMillivolts * abs(currentMicroAmps) / 1_000_000_000f
-        }
+        get() = ChargeMath.chargerSideWatts(chargerVoltageMillivolts, chargerCurrentMaxMilliamps)
+            ?: ChargeMath.batterySideWatts(voltageMillivolts, currentMicroAmps)
 }

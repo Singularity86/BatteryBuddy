@@ -7,10 +7,11 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "discharge_events",
-    indices = [Index("start_timestamp")]
+    indices = [Index("start_timestamp"), Index("battery_id")]
 )
 data class DischargeEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "battery_id")               val batteryId: Long? = null,
     @ColumnInfo(name = "start_timestamp")          val startTimestamp: Long,
     @ColumnInfo(name = "end_timestamp")            val endTimestamp: Long? = null,
     @ColumnInfo(name = "start_percent")            val startPercent: Int,

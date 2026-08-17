@@ -24,18 +24,33 @@ fun EducationScreen() {
         )
 
         EducationSection(
-            title = "What are 'Wear Units'?",
-            content = "A Wear Unit measures the physical degradation of your battery's internal chemistry. A standard 500-cycle battery has roughly 500 Wear Units of 'life'. Charging from 0% to 100% at high heat might cost 1.5 units, while a cool 20% to 80% top-up might only cost 0.3 units."
+            title = "What Low / Medium / High impact means",
+            content = "Every charge is scored for how hard it was on the battery. The score combines how much charge " +
+                "was added — a 20% top-up is far gentler than a 0-to-100 — with how hot the battery got while it " +
+                "happened. It's a relative comparison between your own charges, not a measurement of exactly how " +
+                "much capacity you lost. Most charges land in Low, and that's the point: it's there to help you " +
+                "spot the unusual ones."
         )
 
         EducationSection(
-            title = "The Heat Factor",
-            content = "Heat is the #1 enemy of lithium-ion batteries. When your battery stays above 40°C, the chemical reactions inside become unstable, causing permanent capacity loss. Keeping your phone cool while charging is the best way to extend its life."
+            title = "Heat matters more than anything else",
+            content = "Heat is the main driver of permanent capacity loss in lithium-ion batteries. Above about 40°C " +
+                "the chemistry degrades noticeably faster. If a charge shows up as hot, the fixes are usually simple: " +
+                "take the case off while charging, keep the phone out of direct sun, and don't game while it's plugged in."
         )
 
         EducationSection(
-            title = "Why 80% is the Sweet Spot",
-            content = "Charging the last 20% of a battery requires higher voltage, which causes more 'stress' on the cells. By unplugging at 80%, you avoid this high-stress phase, often doubling the total lifespan of the battery."
+            title = "Why 80% is the sweet spot",
+            content = "Filling the last 20% requires a higher voltage, which puts more stress on the cells. Unplugging " +
+                "around 80% avoids that phase entirely and can meaningfully extend how long the battery lasts. Charging " +
+                "to 100% occasionally is fine — and BatteryTruth needs one full charge now and then to measure capacity."
+        )
+
+        EducationSection(
+            title = "Why capacity needs a full charge to measure",
+            content = "Your phone reports how much charge is left in the battery, not how much it could hold. That figure " +
+                "only equals total capacity at the very top of a charge. That's why the health estimate stays locked until " +
+                "you've charged to 100% at least once, and why it gets more reliable after a few."
         )
     }
 }

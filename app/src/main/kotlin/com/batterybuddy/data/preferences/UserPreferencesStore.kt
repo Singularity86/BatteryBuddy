@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,13 +28,27 @@ class UserPreferencesStore @Inject constructor(
         val DEVICE_MODEL                 = stringPreferencesKey("device_model")
         val TEMP_ALERT_THRESHOLD_C       = intPreferencesKey("temp_alert_threshold_c")
         val OVERNIGHT_HOLD_THRESHOLD_MIN = intPreferencesKey("overnight_hold_threshold_min")
-        val DEFAULT_EXPLANATION_DEPTH    = stringPreferencesKey("default_explanation_depth")
         val HAS_COMPLETED_ONBOARDING     = booleanPreferencesKey("has_completed_onboarding")
-        val HAS_DISMISSED_PROTECT_TIP    = booleanPreferencesKey("has_dismissed_protect_tip")
         val BG_POLLING_INTERVAL_MIN      = intPreferencesKey("bg_polling_interval_min")
         val CHARGER_LABELS_ENCODED       = stringPreferencesKey("charger_labels_encoded")
+        val ACTIVE_BATTERY_ID            = longPreferencesKey("active_battery_id")
+        val LAST_BOOT_ID                 = longPreferencesKey("last_boot_id")
     }
 
+    // Which physical battery is currently installed. Defaults to the migration's
+    // "Battery 1" (row id 1).
+    val activeBatteryId: Flow<Long> =
+        context.dataStore.data.map { it[Keys.ACTIVE_BATTERY_ID] ?: 1L }
+
+    // Boot-time fingerprint (wall clock − uptime). Used to detect that the device
+    // rebooted since the app last ran, which is the only moment a swap is possible.
+    val lastBootId: Flow<Long> =
+        context.dataStore.data.map { it[Keys.LAST_BOOT_ID] ?: 0L }
+
+    /**
+     * Legacy home for rated capacity. Rated mAh now lives on the battery profile;
+     * this is read once at startup so an existing value can be adopted, then cleared.
+     */
     val ratedMahOverride: Flow<Int?> =
         context.dataStore.data.map { it[Keys.RATED_MAH_OVERRIDE] }
 
@@ -46,14 +61,8 @@ class UserPreferencesStore @Inject constructor(
     val overnightHoldThresholdMinutes: Flow<Int> =
         context.dataStore.data.map { it[Keys.OVERNIGHT_HOLD_THRESHOLD_MIN] ?: 120 }
 
-    val defaultExplanationDepth: Flow<String> =
-        context.dataStore.data.map { it[Keys.DEFAULT_EXPLANATION_DEPTH] ?: "SURFACE" }
-
     val hasCompletedOnboarding: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.HAS_COMPLETED_ONBOARDING] ?: false }
-
-    val hasProtectBatteryTipDismissed: Flow<Boolean> =
-        context.dataStore.data.map { it[Keys.HAS_DISMISSED_PROTECT_TIP] ?: false }
 
     val backgroundPollingIntervalMinutes: Flow<Int> =
         context.dataStore.data.map { it[Keys.BG_POLLING_INTERVAL_MIN] ?: 15 }
@@ -76,17 +85,17 @@ class UserPreferencesStore @Inject constructor(
     suspend fun setOvernightHoldThresholdMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.OVERNIGHT_HOLD_THRESHOLD_MIN] = minutes }
 
-    suspend fun setDefaultExplanationDepth(depth: String) =
-        context.dataStore.edit { it[Keys.DEFAULT_EXPLANATION_DEPTH] = depth }
-
     suspend fun setHasCompletedOnboarding(completed: Boolean) =
         context.dataStore.edit { it[Keys.HAS_COMPLETED_ONBOARDING] = completed }
 
-    suspend fun setHasProtectBatteryTipDismissed(dismissed: Boolean) =
-        context.dataStore.edit { it[Keys.HAS_DISMISSED_PROTECT_TIP] = dismissed }
-
     suspend fun setBackgroundPollingIntervalMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.BG_POLLING_INTERVAL_MIN] = minutes }
+
+    suspend fun setActiveBatteryId(id: Long) =
+        context.dataStore.edit { it[Keys.ACTIVE_BATTERY_ID] = id }
+
+    suspend fun setLastBootId(bootId: Long) =
+        context.dataStore.edit { it[Keys.LAST_BOOT_ID] = bootId }
 
     suspend fun setChargerLabel(fingerprint: String, label: String) {
         context.dataStore.edit { prefs ->

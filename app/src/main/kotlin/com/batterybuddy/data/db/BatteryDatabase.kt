@@ -3,11 +3,13 @@ package com.batterybuddy.data.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.batterybuddy.data.db.dao.AppUsageDao
+import com.batterybuddy.data.db.dao.BatteryProfileDao
 import com.batterybuddy.data.db.dao.BatteryReadingDao
 import com.batterybuddy.data.db.dao.ChargeSessionDao
 import com.batterybuddy.data.db.dao.DischargeEventDao
 import com.batterybuddy.data.db.dao.OvernightHoldDao
 import com.batterybuddy.data.db.entity.AppUsageEntity
+import com.batterybuddy.data.db.entity.BatteryProfileEntity
 import com.batterybuddy.data.db.entity.BatteryReadingEntity
 import com.batterybuddy.data.db.entity.ChargeSessionEntity
 import com.batterybuddy.data.db.entity.DischargeEventEntity
@@ -19,9 +21,10 @@ import com.batterybuddy.data.db.entity.OvernightHoldEntity
         ChargeSessionEntity::class,
         DischargeEventEntity::class,
         OvernightHoldEntity::class,
-        AppUsageEntity::class
+        AppUsageEntity::class,
+        BatteryProfileEntity::class
     ],
-    version = 1,
+    version = 3,
     exportSchema = true   // schema JSON written to app/schemas/ for migration auditing
 )
 abstract class BatteryDatabase : RoomDatabase() {
@@ -30,4 +33,5 @@ abstract class BatteryDatabase : RoomDatabase() {
     abstract fun dischargeEventDao(): DischargeEventDao
     abstract fun overnightHoldDao(): OvernightHoldDao
     abstract fun appUsageDao(): AppUsageDao
+    abstract fun batteryProfileDao(): BatteryProfileDao
 }

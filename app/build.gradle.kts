@@ -54,10 +54,9 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.coroutines.android)
 
-    implementation(libs.vico.compose)
-    implementation(libs.vico.compose.m3)
     implementation(libs.glance.appwidget)
     implementation(libs.glance.material3)
     implementation(libs.commons.csv)
-    implementation(libs.browser)
+
+    testImplementation(libs.junit)
 }

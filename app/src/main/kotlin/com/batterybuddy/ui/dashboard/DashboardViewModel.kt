@@ -2,6 +2,7 @@ package com.batterybuddy.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.batterybuddy.data.battery.BatteryStateProvider
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.repository.BatteryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -11,19 +12,27 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+/**
+ * Live tab state.
+ *
+ * The displayed reading comes from the system broadcast so it tracks the battery
+ * in real time; the stored reading is consulted only for the id of the session
+ * currently being recorded, which is what the graph drill-down needs.
+ */
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
-    private val repository: BatteryRepository
+    repository: BatteryRepository,
+    batteryState: BatteryStateProvider
 ) : ViewModel() {
 
     val uiState: StateFlow<DashboardUiState> = combine(
+        batteryState.observe(),
         repository.observeLatestReading(),
         repository.getLatestDischargeEvent()
-    ) { reading, latestDischarge ->
-        if (reading == null) DashboardUiState.Empty
-        else DashboardUiState.Content(
-            reading = reading,
-            chargeSessionId = reading.sessionId,
+    ) { live, stored, latestDischarge ->
+        DashboardUiState.Content(
+            reading          = live,
+            chargeSessionId  = stored?.sessionId,
             dischargeEventId = latestDischarge?.takeIf { it.isOpen }?.id
         )
     }.stateIn(
@@ -35,7 +44,6 @@ class DashboardViewModel @Inject constructor(
 
 sealed interface DashboardUiState {
     object Loading : DashboardUiState
-    object Empty : DashboardUiState
     data class Content(
         val reading: BatteryReading,
         val chargeSessionId: Long? = null,

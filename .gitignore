@@ -16,3 +16,6 @@ app/build/
 .cxx
 local.properties
 app/schemas/
+
+# Kotlin compiler daemon logs
+.kotlin/

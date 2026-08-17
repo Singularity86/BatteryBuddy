@@ -6,9 +6,10 @@ data class HealthSummary(
     val healthPercent: Float,
     val verdict: HealthVerdict,
     val daysSinceFirstSession: Int,
-    val sessionCount: Int
+    val sessionCount: Int,
+    /** How many completed sessions actually reached a full charge — the only ones
+     *  that carry capacity information. Estimates firm up as this grows. */
+    val fullChargeCount: Int
 )
 
 enum class HealthVerdict { HEALTHY, WATCH_IT, PLAN_REPLACEMENT, REPLACE_NOW }
-
-enum class ExplanationDepth { SURFACE, EXPLAINED, DEEP_DIVE }

@@ -29,6 +29,9 @@ interface AppUsageDao {
     """)
     suspend fun getTopAppsSince(since: Long, limit: Int = 20): List<AppUsageTotals>
 
+    @Query("SELECT MAX(window_end) FROM app_usage_samples")
+    suspend fun getLatestWindowEnd(): Long?
+
     @Query("SELECT * FROM app_usage_samples ORDER BY timestamp ASC")
     suspend fun getAllSamplesSnapshot(): List<AppUsageEntity>
 

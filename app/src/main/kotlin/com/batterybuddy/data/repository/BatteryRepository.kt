@@ -2,11 +2,11 @@ package com.batterybuddy.data.repository
 
 import com.batterybuddy.data.db.entity.AppUsageEntity
 import com.batterybuddy.data.model.AppCorrelation
+import com.batterybuddy.data.model.BatteryProfile
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.model.ChargeSession
 import com.batterybuddy.data.model.ChargeSource
 import com.batterybuddy.data.model.DischargeEvent
-import com.batterybuddy.data.model.HealthSummary
 import com.batterybuddy.data.model.OvernightHoldEvent
 import kotlinx.coroutines.flow.Flow
 import java.io.OutputStream
@@ -18,42 +18,51 @@ interface BatteryRepository {
     fun getReadingsForSession(sessionId: Long): Flow<List<BatteryReading>>
     fun getReadingsSince(since: Long): Flow<List<BatteryReading>>
     fun getReadingsBetween(start: Long, end: Long): Flow<List<BatteryReading>>
-    suspend fun getLatestReading(): BatteryReading?
     fun observeLatestReading(): Flow<BatteryReading?>
 
     // --- Charge sessions ---
     suspend fun startChargeSession(startPercent: Int, source: ChargeSource): Long
-    suspend fun updateChargeSession(
+
+    /** High/low-water-mark update for a running session. `hasAbusiveTemp` is sticky. */
+    suspend fun updateLiveSessionFields(
         sessionId: Long,
         peakTempTenthsCelsius: Int,
         chargeCounterMicroAmpHours: Int,
-        isOvernightHold: Boolean,
         hasAbusiveTemp: Boolean
     )
-    suspend fun closeChargeSession(
-        sessionId: Long,
-        endPercent: Int,
-        chargerFingerprint: String?,
-        chargerLabel: String?
-    )
-    suspend fun closeOpenChargeSessions(endPercent: Int)
+
+    suspend fun markOvernightHold(sessionId: Long)
+
+    /** Records the charger a session is running on, while the cable is still attached. */
+    suspend fun updateChargerIdentity(sessionId: Long, fingerprint: String, label: String)
+
+    /** @return true if this call is the one that closed the session. */
+    suspend fun closeChargeSession(sessionId: Long, endPercent: Int): Boolean
+
+    /** @return the sessions this call actually closed, newest first. */
+    suspend fun closeOpenChargeSessions(endPercent: Int): List<ChargeSession>
+
     suspend fun getLatestOpenChargeSession(): ChargeSession?
     fun getAllChargeSessions(): Flow<List<ChargeSession>>
     fun getLatestChargeSession(): Flow<ChargeSession?>
-    fun getCompletedSessionCount(): Flow<Int>
-    fun getSessionsSince(since: Long): Flow<List<ChargeSession>>
-    fun getSessionsByFingerprint(fingerprint: String): Flow<List<ChargeSession>>
     suspend fun updateChargerLabelForFingerprint(fingerprint: String, label: String)
 
     // --- Discharge events ---
     suspend fun getDischargeEventById(id: Long): DischargeEvent?
+    suspend fun getLatestOpenDischargeEvent(): DischargeEvent?
     suspend fun startDischargeEvent(startPercent: Int, startChargeCounter: Int?): Long
-    suspend fun closeDischargeEvent(
+
+    /**
+     * Updates a running event's rolling values without closing it.
+     * @return the mean current over the event so far, in µA, or null if unknown.
+     */
+    suspend fun updateDischargeProgress(
         eventId: Long,
         endPercent: Int,
-        endChargeCounter: Int?,
-        avgCurrentMicroAmps: Int?
-    )
+        endChargeCounter: Int?
+    ): Int?
+
+    suspend fun closeOpenDischargeEvents(endPercent: Int, endChargeCounter: Int?)
     suspend fun markDischargeEventAnomalous(eventId: Long)
     fun getAllDischargeEvents(): Flow<List<DischargeEvent>>
     fun getLatestDischargeEvent(): Flow<DischargeEvent?>
@@ -64,10 +73,16 @@ interface BatteryRepository {
 
     // --- App usage correlation ---
     suspend fun insertAppUsageSamples(samples: List<AppUsageEntity>)
+    suspend fun getLatestAppUsageTimestamp(): Long?
     suspend fun getTopAppCorrelations(windowStart: Long, windowEnd: Long): List<AppCorrelation>
 
-    // --- Computed health (not stored) ---
-    suspend fun computeHealthSummary(ratedMah: Int): HealthSummary?
+    // --- Battery profiles (multi-battery swap support) ---
+    fun getBatteryProfiles(): Flow<List<BatteryProfile>>
+    suspend fun getBatteryProfile(id: Long): BatteryProfile?
+    suspend fun addBatteryProfile(label: String, ratedMah: Int): Long
+    suspend fun renameBatteryProfile(id: Long, label: String)
+    suspend fun setBatteryRatedMah(id: Long, ratedMah: Int)
+    suspend fun reassignRecordsSince(since: Long, batteryId: Long)
 
     // --- Maintenance ---
     suspend fun clearAllData()

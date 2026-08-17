@@ -18,6 +18,10 @@ data class ChargerStats(
     val averagePeakTempCelsius: Float,
     val averageWatts: Float,
     val abusiveSessionCount: Int,
-    val efficiencyScore: Float, // 0 to 100
+    /**
+     * 0–100, entirely a measure of how cool this charger runs — it says nothing
+     * about electrical efficiency. Higher is gentler on the battery.
+     */
+    val coolRunningScore: Float,
     val sessions: List<SessionSummary> = emptyList()
 )

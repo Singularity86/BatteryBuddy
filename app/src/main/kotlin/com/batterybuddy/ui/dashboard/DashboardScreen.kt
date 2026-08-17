@@ -21,7 +21,6 @@ import com.batterybuddy.data.model.ChargeState
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onNavigateToEducation: () -> Unit,
     onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -36,24 +35,6 @@ fun DashboardScreen(
             is DashboardUiState.Loading -> {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                }
-            }
-            is DashboardUiState.Empty -> {
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Awaiting First Reading",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Plug in or use your device for a moment.\nMonitoring is active in the background.",
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
             is DashboardUiState.Content -> {
@@ -113,6 +94,14 @@ fun DashboardContent(
             )
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = buildStatusDescription(reading, isCharging),
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
         Spacer(modifier = Modifier.height(if (isLandscape) 20.dp else 48.dp))
 
         Row(
@@ -135,7 +124,15 @@ fun DashboardContent(
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             MetricItem("Voltage", "${reading.voltageMillivolts} mV", MaterialTheme.colorScheme.outline)
-            MetricItem("Physical Current", "${reading.currentMicroAmps / 1000} mA", MaterialTheme.colorScheme.outline)
+            // Sign is normalized by charge direction: the raw sensor value is negative
+            // while charging on some devices (e.g. Samsung), which was showing a
+            // confusing negative number. "+" = flowing into the battery, "-" = draining.
+            val currentMa = kotlin.math.abs(reading.currentMicroAmps) / 1000
+            MetricItem(
+                "Current",
+                if (isCharging) "+$currentMa mA" else "-$currentMa mA",
+                MaterialTheme.colorScheme.outline
+            )
         }
         
         if (isCharging) {
@@ -178,4 +175,32 @@ fun getTempColor(temp: Float): Color = when {
     temp > 42 -> Color(0xFFF44336)
     temp > 35 -> Color(0xFFFF9800)
     else -> Color(0xFF4CAF50)
+}
+
+/** Human-readable description of what the battery is doing right now. */
+fun buildStatusDescription(reading: BatteryReading, isCharging: Boolean): String {
+    if (isCharging) {
+        if (reading.batteryPercent >= 100 || reading.chargeState == ChargeState.FULL) {
+            return "Fully charged — topping off. Unplugging now reduces long-term wear."
+        }
+        val w = reading.chargingPowerWatts
+        val tier = when {
+            w >= 20f -> "Fast charging"
+            w >= 7f  -> "Charging"
+            w > 0f   -> "Trickle charging"
+            else     -> "Charging"
+        }
+        val powerStr = if (w > 0f) " at %.0f W".format(w) else ""
+        val proto = reading.chargeProtocolLabel ?: reading.chargerType
+        return if (proto != null) "$tier$powerStr · $proto" else "$tier$powerStr"
+    }
+
+    val drainMa = kotlin.math.abs(reading.currentMicroAmps) / 1000
+    val tier = when {
+        drainMa >= 800 -> "High drain"
+        drainMa >= 250 -> "Discharging"
+        else           -> "Low drain"
+    }
+    val screen = if (reading.isScreenOn) "screen on" else "screen off"
+    return "$tier · $drainMa mA · $screen"
 }

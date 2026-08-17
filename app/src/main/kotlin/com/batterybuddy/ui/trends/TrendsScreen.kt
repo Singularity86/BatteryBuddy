@@ -40,9 +40,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.batterybuddy.data.analysis.ChargeMath
+import com.batterybuddy.data.analysis.WearBand
 import com.batterybuddy.data.model.ChargeSession
 import com.batterybuddy.data.model.DischargeEvent
+import com.batterybuddy.data.model.HealthSummary
 import com.batterybuddy.data.model.HealthVerdict
+import com.batterybuddy.ui.appdrain.AppDrainSection
+import com.batterybuddy.ui.appdrain.AppDrainViewModel
+import com.batterybuddy.ui.battery.BatterySection
+import com.batterybuddy.ui.battery.BatteryViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -51,7 +58,8 @@ import kotlin.math.max
 @Composable
 fun TrendsScreen(
     viewModel: TrendsViewModel,
-    onNavigateToEducation: () -> Unit,
+    batteryViewModel: BatteryViewModel,
+    appDrainViewModel: AppDrainViewModel,
     onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -61,6 +69,9 @@ fun TrendsScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        BatterySection(batteryViewModel)
+        Spacer(modifier = Modifier.height(12.dp))
+
         when (val state = uiState) {
             is TrendsUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -72,7 +83,7 @@ fun TrendsScreen(
                     Text("No sessions recorded yet. Start charging to see trends.")
                 }
             }
-            is TrendsUiState.Content -> TrendsContent(state, onViewGraph)
+            is TrendsUiState.Content -> TrendsContent(state, appDrainViewModel, onViewGraph)
         }
     }
 }
@@ -80,15 +91,20 @@ fun TrendsScreen(
 @Composable
 fun TrendsContent(
     state: TrendsUiState.Content,
+    appDrainViewModel: AppDrainViewModel,
     onViewGraph: (sessionId: Long, isCharge: Boolean) -> Unit = { _, _ -> }
 ) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            CalibrationGuidanceCard(state.completedChargeSessionCount)
+            CalibrationGuidanceCard(state.healthSummary, state.completedChargeSessionCount)
             Spacer(modifier = Modifier.height(12.dp))
             HealthSummaryCard(state)
             Spacer(modifier = Modifier.height(8.dp))
             LifetimeWearCard(state)
+            Spacer(modifier = Modifier.height(8.dp))
+            OvernightHoldCard(state)
+            Spacer(modifier = Modifier.height(8.dp))
+            AppDrainSection(appDrainViewModel)
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -123,28 +139,74 @@ fun TrendsContent(
 }
 
 @Composable
-fun CalibrationGuidanceCard(completedSessions: Int) {
-    if (completedSessions >= 5) return
+fun CalibrationGuidanceCard(health: HealthSummary?, completedSessions: Int) {
+    // Capacity can only be read at the top of a charge, so say so plainly rather
+    // than showing a blank card or a number we haven't earned yet.
+    val body = when {
+        health == null && completedSessions == 0 ->
+            "Charge to 100% once and BatteryTruth can measure your battery's real capacity."
+        health == null ->
+            "No full charge recorded yet. Capacity can only be read at 100%, so charge all the way up once to unlock the health estimate."
+        health.fullChargeCount < FULL_CHARGES_FOR_CONFIDENCE ->
+            "Based on ${health.fullChargeCount} full ${if (health.fullChargeCount == 1) "charge" else "charges"}. The estimate settles after about $FULL_CHARGES_FOR_CONFIDENCE."
+        else -> return
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Calibration in progress",
+                text = "Still calibrating",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Battery health estimates get steadier after about 5 completed charge sessions. Current count: $completedSessions.",
+                text = body,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )
         }
     }
 }
+
+/**
+ * Surfaces overnight holds, which were being recorded and never shown.
+ * Framed as a habit over a window rather than a running guilt tally.
+ */
+@Composable
+fun OvernightHoldCard(state: TrendsUiState.Content) {
+    val nights = state.overnightNights
+    if (nights == 0) return
+
+    val longest = state.recentOvernightHolds.maxOfOrNull { it.durationMinutes } ?: 0
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Overnight charging", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "$nights of the last ${state.overnightWindowNights} nights",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Longest stretch sitting at 100%: ${formatDurationMinutes(longest)}. " +
+                    "Unplugging once it's full — or charging before bed instead of overnight — is the easiest habit to change.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private const val FULL_CHARGES_FOR_CONFIDENCE = 5
 
 @Composable
 fun SessionWearItem(
@@ -284,18 +346,11 @@ private fun SessionDetailGrid(session: ChargeSession, cost: Float?) {
             DetailRow("Energy added", "%.1f Wh".format(it))
         }
 
-        val dod = ((session.endPercent ?: 0) - session.startPercent).coerceAtLeast(0)
-        DetailRow("Depth of charge", "$dod%")
+        val chargedPercent = ((session.endPercent ?: 0) - session.startPercent).coerceAtLeast(0)
+        DetailRow("Charge added", "$chargedPercent%")
 
         if (cost != null) {
-            val tempC = session.peakTemperatureCelsius ?: 25f
-            val factorStr = when {
-                tempC > 45f -> "1.5× (very hot)"
-                tempC > 38f -> "1.2× (warm)"
-                tempC < 10f -> "1.1× (cold)"
-                else -> "1.0× (normal)"
-            }
-            DetailRow("Temp factor", factorStr)
+            DetailRow("Temp factor", ChargeMath.temperatureFactorLabel(session.peakTempTenthsCelsius))
         }
 
         if (session.isOvernightHold) {
@@ -501,8 +556,14 @@ fun HealthSummaryCard(state: TrendsUiState.Content) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Estimated Capacity: ${health.currentCapacityMah} mAh / ${health.ratedMah} mAh",
+                text = "Estimated capacity: ${health.currentCapacityMah} mAh of ${health.ratedMah} mAh rated",
                 style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Measured from ${health.fullChargeCount} full " +
+                    if (health.fullChargeCount == 1) "charge" else "charges",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -571,10 +632,14 @@ fun getVerdictColor(verdict: HealthVerdict): Color = when (verdict) {
     HealthVerdict.REPLACE_NOW      -> Color(0xFFF44336)
 }
 
-fun getWearLabel(cost: Float): Pair<String, Color> = when {
-    cost > 0.8f -> "High Impact"   to Color(0xFFF44336)
-    cost > 0.4f -> "Medium Impact" to Color(0xFFFF9800)
-    else        -> "Low Impact"    to Color(0xFF4CAF50)
+fun getWearLabel(cost: Float): Pair<String, Color> {
+    val band = ChargeMath.wearBand(cost)
+    val color = when (band) {
+        WearBand.HIGH   -> Color(0xFFF44336)
+        WearBand.MEDIUM -> Color(0xFFFF9800)
+        WearBand.LOW    -> Color(0xFF4CAF50)
+    }
+    return band.label to color
 }
 
 private fun ChargeSession.displayDurationMinutes(): Int {
@@ -583,19 +648,14 @@ private fun ChargeSession.displayDurationMinutes(): Int {
     return max(0L, (end - startTimestamp) / 60_000L).toInt()
 }
 
+/** Stored cost once the session is closed; the same model applied live before that. */
 private fun ChargeSession.displayWearCost(): Float? {
     weightedCycleCost?.let { return it }
     val end = endPercent ?: return null
-    val chargedPercent = (end - startPercent).coerceAtLeast(0) / 100f
-    if (chargedPercent <= 0f) return 0f
-    val tempC = peakTempTenthsCelsius?.div(10f) ?: 25f
-    val tempFactor = when {
-        tempC > 45f -> 1.5f
-        tempC > 38f -> 1.2f
-        tempC < 10f -> 1.1f
-        else        -> 1.0f
-    }
-    return chargedPercent * chargedPercent * tempFactor
+    return ChargeMath.cycleCost(
+        ChargeMath.chargeFraction(startPercent, end),
+        peakTempTenthsCelsius
+    )
 }
 
 private fun DischargeEvent.displayDurationMinutes(): Int {

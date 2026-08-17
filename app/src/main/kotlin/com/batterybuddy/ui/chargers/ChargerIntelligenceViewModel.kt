@@ -2,6 +2,7 @@ package com.batterybuddy.ui.chargers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.batterybuddy.data.battery.ChargerClassifier
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.model.ChargeSession
 import com.batterybuddy.data.model.ChargeSource
@@ -43,13 +44,13 @@ class ChargerIntelligenceViewModel @Inject constructor(
             ChargerUiState.Empty
         } else {
             val stats = samples.groupBy { it.fingerprint }
-                .map { (fp, group) ->
-                    val history = (sessionsByFingerprint[fp] ?: emptyList())
+                .map { (fingerprint, group) ->
+                    val history = (sessionsByFingerprint[fingerprint] ?: emptyList())
                         .filter { !it.isOpen }
                         .map { it.toSummary() }
-                    buildStats(fp, group, history, userLabels)
+                    buildStats(fingerprint, group, history, userLabels)
                 }
-                .sortedByDescending { it.efficiencyScore }
+                .sortedByDescending { it.coolRunningScore }
             ChargerUiState.Content(stats)
         }
     }.stateIn(
@@ -59,7 +60,6 @@ class ChargerIntelligenceViewModel @Inject constructor(
     )
 
     // Non-null when there's a completed session whose fingerprint has no user label yet.
-    // Pair is (fingerprint, autoLabel) so the dialog can pre-fill a sensible default.
     val pendingLabelPrompt: StateFlow<Pair<String, String>?> = combine(
         repository.getAllChargeSessions(),
         prefs.chargerLabels,
@@ -70,8 +70,7 @@ class ChargerIntelligenceViewModel @Inject constructor(
             .sortedByDescending { it.startTimestamp }
             .firstOrNull { it.chargerFingerprint!! !in userLabels && it.chargerFingerprint!! !in dismissed }
             ?.let { session ->
-                val autoLabel = session.chargerLabel
-                    ?: (session.chargeSource.name.lowercase().replaceFirstChar { it.uppercase() } + " charger")
+                val autoLabel = session.chargerLabel ?: defaultLabel(session.chargeSource)
                 session.chargerFingerprint!! to autoLabel
             }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -94,52 +93,77 @@ class ChargerIntelligenceViewModel @Inject constructor(
         sessions: List<SessionSummary>,
         userLabels: Map<String, String>
     ): ChargerStats {
-        val avgTemp = samples.map { it.tempC }.average().toFloat().takeIf { !it.isNaN() } ?: 0f
-        val avgWatts = samples.map { it.watts }.filter { it > 0f }.average().toFloat().takeIf { !it.isNaN() } ?: 0f
+        val temps = samples.map { it.tempC }.filter { it > 0f }
+        val avgTemp = if (temps.isEmpty()) 0f else temps.average().toFloat()
+        val watts = samples.map { it.watts }.filter { it > 0f }
+        val avgWatts = if (watts.isEmpty()) 0f else watts.average().toFloat()
         val abusiveCount = samples.count { it.hasAbusiveTemp }
-        val tempPenalty = (avgTemp - 30f).coerceAtLeast(0f) * 5f
-        val abusivePenalty = (abusiveCount.toFloat() / samples.size) * 50f
+
+        // Purely thermal: how far above a comfortable 30 °C this charger tends to
+        // push the battery, plus how often it crossed the abuse threshold.
+        val tempPenalty = (avgTemp - COMFORTABLE_TEMP_C).coerceAtLeast(0f) * TEMP_PENALTY_PER_DEGREE
+        val abusivePenalty = (abusiveCount.toFloat() / samples.size) * ABUSIVE_PENALTY_WEIGHT
+
         return ChargerStats(
-            fingerprint = fingerprint,
-            label = userLabels[fingerprint] ?: samples.first().label,
-            sessionCount = samples.size,
+            fingerprint            = fingerprint,
+            label                  = userLabels[fingerprint] ?: samples.first().label,
+            sessionCount           = samples.size,
             averagePeakTempCelsius = avgTemp,
-            averageWatts = avgWatts,
-            abusiveSessionCount = abusiveCount,
-            efficiencyScore = (100f - tempPenalty - abusivePenalty).coerceIn(0f, 100f),
-            sessions = sessions
+            averageWatts           = avgWatts,
+            abusiveSessionCount    = abusiveCount,
+            coolRunningScore       = (100f - tempPenalty - abusivePenalty).coerceIn(0f, 100f),
+            sessions               = sessions
         )
     }
 
+    private fun defaultLabel(source: ChargeSource): String =
+        source.name.lowercase().replaceFirstChar { it.uppercase() } + " charger"
+
+    /** Mean power over a completed session, derived from measured energy and duration. */
+    private fun ChargeSession.averageWatts(): Float {
+        val wattHours = energyAddedWattHours ?: return 0f
+        val hours = (durationMinutes ?: 0) / 60f
+        return if (hours > 0f) (wattHours / hours).toFloat() else 0f
+    }
+
     private fun ChargeSession.toSample(userLabels: Map<String, String>): ChargerSample {
-        val fp = chargerFingerprint ?: "${chargeSource.name}|UNCLASSIFIED"
-        val watts = energyAddedWattHours?.let { wh ->
-            val h = (durationMinutes ?: 0) / 60f
-            if (h > 0f) (wh / h).toFloat() else 0f
-        } ?: 0f
-        val sourceLabel = chargeSource.name.lowercase().replaceFirstChar { it.uppercase() }
-        val autoLabel = chargerLabel ?: if (isOpen) "Active ${chargeSource.name.lowercase()} charger" else "$sourceLabel charger"
-        return ChargerSample(fp, userLabels[fp] ?: autoLabel, peakTemperatureCelsius ?: 0f, watts, hasAbusiveTemp)
+        val fingerprint = chargerFingerprint ?: "${chargeSource.name}|UNCLASSIFIED"
+        val autoLabel = chargerLabel
+            ?: if (isOpen) "Active ${chargeSource.name.lowercase()} charger" else defaultLabel(chargeSource)
+        return ChargerSample(
+            fingerprint    = fingerprint,
+            label          = userLabels[fingerprint] ?: autoLabel,
+            tempC          = peakTemperatureCelsius ?: 0f,
+            watts          = averageWatts(),
+            hasAbusiveTemp = hasAbusiveTemp
+        )
     }
 
+    /**
+     * Live readings go through the same classifier the polling service uses, so a
+     * charger seen live and the same charger seen in history share one identity.
+     */
     private fun BatteryReading.toSample(userLabels: Map<String, String>): ChargerSample {
-        val type = chargerType ?: chargeSource.name
-        val protocol = chargeProtocolLabel ?: "NONE"
-        val fp = if (chargerType != null || chargeProtocolLabel != null)
-            "$type|${chargerVoltageMillivolts ?: "AUTO"}|${chargerCurrentMaxMilliamps ?: "AUTO"}|$protocol"
-        else
-            "${chargeSource.name}|LIVE"
-        val autoLabel = chargeProtocolLabel ?: chargerType ?: "Live ${chargeSource.name.lowercase()} charger"
-        return ChargerSample(fp, userLabels[fp] ?: autoLabel, temperatureCelsius, chargingPowerWatts, temperatureCelsius > 38f)
+        val profile = ChargerClassifier.classify(this)
+        return ChargerSample(
+            fingerprint    = profile.fingerprint,
+            label          = userLabels[profile.fingerprint] ?: profile.label,
+            tempC          = temperatureCelsius,
+            watts          = chargingPowerWatts,
+            hasAbusiveTemp = temperatureCelsius > ABUSIVE_TEMP_C
+        )
     }
 
-    private fun ChargeSession.toSummary(): SessionSummary {
-        val watts = energyAddedWattHours?.let { wh ->
-            val h = (durationMinutes ?: 0) / 60f
-            if (h > 0f) (wh / h).toFloat() else 0f
-        } ?: 0f
-        return SessionSummary(id, startTimestamp, durationMinutes, startPercent, endPercent, watts, peakTemperatureCelsius, hasAbusiveTemp)
-    }
+    private fun ChargeSession.toSummary(): SessionSummary = SessionSummary(
+        id = id,
+        startTimestamp = startTimestamp,
+        durationMinutes = durationMinutes,
+        startPercent = startPercent,
+        endPercent = endPercent,
+        avgWatts = averageWatts(),
+        peakTempCelsius = peakTemperatureCelsius,
+        hasAbusiveTemp = hasAbusiveTemp
+    )
 
     private data class ChargerSample(
         val fingerprint: String,
@@ -149,8 +173,12 @@ class ChargerIntelligenceViewModel @Inject constructor(
         val hasAbusiveTemp: Boolean
     )
 
-    companion object {
-        private const val RECENT_WINDOW_MS = 30L * 24L * 60L * 60L * 1000L
+    private companion object {
+        const val RECENT_WINDOW_MS = 30L * 24L * 60L * 60L * 1000L
+        const val COMFORTABLE_TEMP_C = 30f
+        const val ABUSIVE_TEMP_C = 38f
+        const val TEMP_PENALTY_PER_DEGREE = 5f
+        const val ABUSIVE_PENALTY_WEIGHT = 50f
     }
 }
 

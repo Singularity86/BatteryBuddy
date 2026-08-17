@@ -40,7 +40,8 @@ class ChargerInfoReader @Inject constructor() {
     fun read(): ChargerInfo = ChargerInfo(
         chargerVoltageMillivolts   = readInt(voltagePaths)?.let { it / 1000 },
         chargerCurrentMaxMilliamps = readInt(currentMaxPaths)?.let { it / 1000 },
-        isPdActive                 = readString(pdActivePaths)?.trim() == "1",
+        // null means "the kernel didn't tell us", which is not the same as "not PD".
+        isPdActive                 = readString(pdActivePaths)?.trim()?.let { it == "1" },
         chargerType                = readString(typePaths)?.trim()
             ?.takeIf { it.isNotEmpty() && it != "Unknown" },
         chargeProtocolLabel        = readString(protocolPaths)?.trim()

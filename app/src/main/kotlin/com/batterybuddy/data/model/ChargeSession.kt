@@ -2,6 +2,7 @@ package com.batterybuddy.data.model
 
 data class ChargeSession(
     val id: Long,
+    val batteryId: Long?,
     val startTimestamp: Long,
     val endTimestamp: Long?,
     val startPercent: Int,
@@ -14,7 +15,8 @@ data class ChargeSession(
     val hasAbusiveTemp: Boolean,
     val durationMinutes: Int?,
     val energyAddedMilliWattHours: Long?,
-    val depthOfDischarge: Float?,
+    /** Fraction of the battery this session refilled, 0f..1f. */
+    val chargeFraction: Float?,
     val weightedCycleCost: Float?,
     val chargerFingerprint: String?,
     val chargerLabel: String?

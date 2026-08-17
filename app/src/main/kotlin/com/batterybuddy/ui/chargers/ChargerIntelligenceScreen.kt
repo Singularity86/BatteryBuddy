@@ -22,10 +22,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ChargerIntelligenceScreen(
-    viewModel: ChargerIntelligenceViewModel,
-    onNavigateToEducation: () -> Unit
-) {
+fun ChargerIntelligenceScreen(viewModel: ChargerIntelligenceViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pendingPrompt by viewModel.pendingLabelPrompt.collectAsStateWithLifecycle()
 
@@ -184,14 +181,14 @@ fun ChargerCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
-                        color = getScoreColor(charger.efficiencyScore).copy(alpha = 0.2f)
+                        color = getScoreColor(charger.coolRunningScore).copy(alpha = 0.2f)
                     ) {
                         Text(
-                            text = "${charger.efficiencyScore.toInt()}",
+                            text = "${charger.coolRunningScore.toInt()}",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = getScoreColor(charger.efficiencyScore)
+                            color = getScoreColor(charger.coolRunningScore)
                         )
                     }
                     Spacer(Modifier.width(4.dp))
@@ -255,7 +252,7 @@ fun ChargerCard(
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = "${charger.abusiveSessionCount} abusive heat events detected",
+                        text = "Ran hot on ${charger.abusiveSessionCount} of ${charger.sessionCount} samples",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error
                     )

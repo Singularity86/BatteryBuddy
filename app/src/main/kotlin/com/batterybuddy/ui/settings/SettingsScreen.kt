@@ -1,5 +1,7 @@
 package com.batterybuddy.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -12,11 +14,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,27 +36,39 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.batterybuddy.worker.BatterySchedule
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+
     var deviceModel by remember { mutableStateOf(state.deviceModel) }
-    var ratedMah by remember { mutableStateOf(state.ratedMahOverride?.toString().orEmpty()) }
+    var ratedMah by remember { mutableStateOf(state.ratedMah?.toString().orEmpty()) }
     var tempThreshold by remember { mutableStateOf(state.tempAlertThresholdCelsius.toString()) }
     var holdThreshold by remember { mutableStateOf(state.overnightHoldThresholdMinutes.toString()) }
     var pollingInterval by remember { mutableStateOf(state.backgroundPollingIntervalMinutes.toString()) }
     var showDiagnostics by remember { mutableStateOf(false) }
+    var showClearConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.deviceModel, state.ratedMahOverride, state.tempAlertThresholdCelsius, state.overnightHoldThresholdMinutes, state.backgroundPollingIntervalMinutes) {
+    LaunchedEffect(
+        state.deviceModel, state.ratedMah, state.tempAlertThresholdCelsius,
+        state.overnightHoldThresholdMinutes, state.backgroundPollingIntervalMinutes
+    ) {
         deviceModel = state.deviceModel
-        ratedMah = state.ratedMahOverride?.toString().orEmpty()
+        ratedMah = state.ratedMah?.toString().orEmpty()
         tempThreshold = state.tempAlertThresholdCelsius.toString()
         holdThreshold = state.overnightHoldThresholdMinutes.toString()
         pollingInterval = state.backgroundPollingIntervalMinutes.toString()
     }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> uri?.let(viewModel::exportTo) }
 
     Column(
         modifier = Modifier
@@ -72,8 +89,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             Spacer(Modifier.height(12.dp))
             NumberField("Battery rated capacity (mAh)", ratedMah) { ratedMah = it }
             Text(
-                text = "Found in your phone's spec sheet. Used to calculate health %. " +
-                    "Currently using: ${ratedMah.toIntOrNull() ?: 4500} mAh.",
+                text = "From your phone's spec sheet. Health % is measured against this, " +
+                    "and it belongs to the battery that's currently installed.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
@@ -86,16 +103,23 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("Save Device")
+                Text("Save device")
             }
         }
 
         SettingsCard {
-            NumberField("High temperature alert (C)", tempThreshold) { tempThreshold = it }
+            NumberField("High temperature alert (°C)", tempThreshold) { tempThreshold = it }
             Spacer(Modifier.height(8.dp))
             NumberField("Overnight hold alert (minutes)", holdThreshold) { holdThreshold = it }
             Spacer(Modifier.height(8.dp))
-            NumberField("Background polling interval (minutes)", pollingInterval) { pollingInterval = it }
+            NumberField("Background sampling interval (minutes)", pollingInterval) { pollingInterval = it }
+            Text(
+                text = "Android won't sample more often than every " +
+                    "${BatterySchedule.MIN_INTERVAL_MINUTES} minutes while unplugged.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = {
@@ -105,19 +129,70 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("Save Monitoring")
+                Text("Save monitoring")
+            }
+        }
+
+        SettingsCard {
+            Text("Your data", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Everything BatteryTruth records stays on this device. Export it as CSV any " +
+                    "time, or delete all of it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { exportLauncher.launch(defaultExportFileName()) }) {
+                    Text("Export CSV")
+                }
+                OutlinedButton(onClick = { showClearConfirm = true }) {
+                    Text("Delete all data")
+                }
             }
         }
 
         TextButton(onClick = { showDiagnostics = !showDiagnostics }) {
-            Text(if (showDiagnostics) "Hide Diagnostics" else "Show Diagnostics")
+            Text(if (showDiagnostics) "Hide diagnostics" else "Show diagnostics")
         }
 
         if (showDiagnostics) {
             DiagnosticsCard(state)
         }
+
+        message?.let { text ->
+            Snackbar(
+                action = { TextButton(onClick = viewModel::consumeMessage) { Text("OK") } }
+            ) { Text(text) }
+        }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("Delete all recorded data?") },
+            text = {
+                Text(
+                    "This removes every charge session, discharge event and reading. " +
+                        "Battery health estimates start again from zero. This can't be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearAllData()
+                    showClearConfirm = false
+                }) { Text("Delete everything") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") }
+            }
+        )
     }
 }
+
+private fun defaultExportFileName(): String =
+    "batterytruth-${LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)}.csv"
 
 @Composable
 private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
@@ -147,10 +222,10 @@ private fun DiagnosticsCard(state: SettingsUiState) {
         Spacer(Modifier.height(8.dp))
         val reading = state.latestReading
         val session = state.latestSession
-        DiagnosticRow("Latest reading", reading?.timestamp?.formatTimestamp() ?: "None")
+        DiagnosticRow("Latest stored reading", reading?.timestamp?.formatTimestamp() ?: "None")
         DiagnosticRow("Battery", reading?.let { "${it.batteryPercent}% ${it.chargeState.name}" } ?: "Unknown")
         DiagnosticRow("Power", reading?.let { "%.1f W, ${it.currentMicroAmps / 1000} mA".format(it.chargingPowerWatts) } ?: "Unknown")
-        DiagnosticRow("Temperature", reading?.let { "%.1f C".format(it.temperatureCelsius) } ?: "Unknown")
+        DiagnosticRow("Temperature", reading?.let { "%.1f °C".format(it.temperatureCelsius) } ?: "Unknown")
         DiagnosticRow("Source", reading?.chargeSource?.name ?: "Unknown")
         DiagnosticRow("Latest session", session?.let { "#${it.id} ${if (it.isOpen) "open" else "closed"}" } ?: "None")
     }

@@ -29,9 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.batterybuddy.data.repository.BatteryRepository
 import com.batterybuddy.ui.dashboard.DashboardScreen
 import com.batterybuddy.ui.dashboard.DashboardViewModel
@@ -40,6 +37,9 @@ import com.batterybuddy.ui.graph.SessionGraphScreen
 import com.batterybuddy.ui.graph.SessionGraphViewModel
 import com.batterybuddy.ui.trends.TrendsScreen
 import com.batterybuddy.ui.trends.TrendsViewModel
+import com.batterybuddy.ui.appdrain.AppDrainViewModel
+import com.batterybuddy.ui.battery.BatteryViewModel
+import com.batterybuddy.ui.battery.SwapPromptDialog
 import com.batterybuddy.ui.chargers.ChargerIntelligenceScreen
 import com.batterybuddy.ui.chargers.ChargerIntelligenceViewModel
 import com.batterybuddy.ui.onboarding.OnboardingScreen
@@ -47,7 +47,7 @@ import com.batterybuddy.ui.main.MainViewModel
 import com.batterybuddy.ui.settings.SettingsScreen
 import com.batterybuddy.ui.settings.SettingsViewModel
 import com.batterybuddy.service.BatteryPollingService
-import com.batterybuddy.worker.BatteryDataWorker
+import com.batterybuddy.worker.BatterySchedule
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -99,6 +99,8 @@ class MainActivity : ComponentActivity() {
     private val chargerViewModel: ChargerIntelligenceViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val sessionGraphViewModel: SessionGraphViewModel by viewModels()
+    private val batteryViewModel: BatteryViewModel by viewModels()
+    private val appDrainViewModel: AppDrainViewModel by viewModels()
     private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -174,7 +176,6 @@ class MainActivity : ComponentActivity() {
                             when (destination) {
                                 AppDestination.Live -> DashboardScreen(
                                     viewModel = dashboardViewModel,
-                                    onNavigateToEducation = { destination = AppDestination.School },
                                     onViewGraph = { id, isCharge ->
                                         graphSessionId = id
                                         graphIsCharge = isCharge
@@ -184,7 +185,8 @@ class MainActivity : ComponentActivity() {
                                 )
                                 AppDestination.History -> TrendsScreen(
                                     viewModel = trendsViewModel,
-                                    onNavigateToEducation = { destination = AppDestination.School },
+                                    batteryViewModel = batteryViewModel,
+                                    appDrainViewModel = appDrainViewModel,
                                     onViewGraph = { id, isCharge ->
                                         graphSessionId = id
                                         graphIsCharge = isCharge
@@ -192,7 +194,7 @@ class MainActivity : ComponentActivity() {
                                         destination = AppDestination.SessionGraph
                                     }
                                 )
-                                AppDestination.Chargers -> ChargerIntelligenceScreen(chargerViewModel) { destination = AppDestination.School }
+                                AppDestination.Chargers -> ChargerIntelligenceScreen(chargerViewModel)
                                 AppDestination.School -> EducationScreen()
                                 AppDestination.Settings -> SettingsScreen(settingsViewModel)
                                 AppDestination.SessionGraph -> SessionGraphScreen(
@@ -217,6 +219,10 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+
+                if (hasCompletedOnboarding) {
+                    SwapPromptDialog(batteryViewModel)
+                }
             }
         }
     }
@@ -228,6 +234,8 @@ class MainActivity : ComponentActivity() {
         ) {
             syncTrackingState()
         }
+        // Usage access is granted in system settings, so re-check on the way back.
+        appDrainViewModel.refresh()
     }
 
     private fun syncTrackingState() {
@@ -235,20 +243,25 @@ class MainActivity : ComponentActivity() {
         val batteryStatus = registerReceiver(null, filter)
         val plugged = batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
         val percent = getBatteryPercent(batteryStatus)
-        
+
         if (plugged > 0) {
-            val serviceIntent = Intent(this, BatteryPollingService::class.java)
-            ContextCompat.startForegroundService(this, serviceIntent)
-        } else {
-            lifecycleScope.launch {
-                repository.closeOpenChargeSessions(percent)
+            // Starting a foreground service can be refused when the system's
+            // daily budget for the type is exhausted; sampling resumes on the
+            // next plug-in rather than taking the app down with it.
+            runCatching {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, BatteryPollingService::class.java)
+                )
             }
-            WorkManager.getInstance(this).enqueueUniqueWork(
-                LIVE_REFRESH_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                OneTimeWorkRequestBuilder<BatteryDataWorker>().build()
-            )
+            return
         }
+
+        // Not plugged in, so any charge session still marked open is stale —
+        // the service died or the device rebooted mid-charge. Close it quietly;
+        // the unplug receiver owns closes that deserve a summary notification.
+        lifecycleScope.launch { repository.closeOpenChargeSessions(percent) }
+        BatterySchedule.requestImmediateSample(this)
     }
 
     private fun getBatteryPercent(batteryStatus: Intent?): Int {
@@ -260,17 +273,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
-        if (!shouldRequestNotificationPermission()) syncTrackingState()
-    }
-
     private fun shouldRequestNotificationPermission(): Boolean {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-    }
-
-    companion object {
-        private const val LIVE_REFRESH_WORK_NAME = "battery_live_refresh"
     }
 }
 

@@ -7,81 +7,112 @@ import android.os.BatteryManager
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.batterybuddy.data.db.entity.AppUsageEntity
 import com.batterybuddy.data.model.BatteryReading
 import com.batterybuddy.data.model.ChargeSource
 import com.batterybuddy.data.model.ChargeState
 import com.batterybuddy.data.repository.BatteryRepository
+import com.batterybuddy.data.usage.UsageStatsReader
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import kotlin.math.abs
 
+/**
+ * Periodic sampling while unplugged.
+ *
+ * Updates the open discharge event in place rather than closing and reopening it
+ * each run — an event represents the whole unplugged stretch, from unplug to the
+ * next plug-in, not a fixed-length bucket.
+ */
 @HiltWorker
 class BatteryDataWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
-    private val repository: BatteryRepository
+    private val repository: BatteryRepository,
+    private val usageStatsReader: UsageStatsReader
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            val status  = readBatteryStatus()
-            val reading = BatteryReading(
-                id                         = 0,
-                timestamp                  = Instant.now().toEpochMilli(),
-                voltageMillivolts          = status.voltageMv,
-                temperatureTenthsCelsius   = status.tempTenthsC,
-                chargeCounterMicroAmpHours = status.chargeCounterUah,
-                currentMicroAmps           = status.currentUa,
-                batteryPercent             = status.percent,
-                chargeSource               = ChargeSource.NONE,
-                chargeState                = status.chargeState,
-                isScreenOn                 = false,
-                sessionId                  = null,
-                chargerVoltageMillivolts   = null,
-                chargerCurrentMaxMilliamps = null,
-                isPdActive                 = null,
-                chargerType                = null,
-                chargeProtocolLabel        = null
+            val status = readBatteryStatus()
+            repository.insertReading(
+                BatteryReading(
+                    id                         = 0,
+                    timestamp                  = Instant.now().toEpochMilli(),
+                    voltageMillivolts          = status.voltageMv,
+                    temperatureTenthsCelsius   = status.tempTenthsC,
+                    chargeCounterMicroAmpHours = status.chargeCounterUah,
+                    currentMicroAmps           = status.currentUa,
+                    batteryPercent             = status.percent,
+                    chargeSource               = status.chargeSource,
+                    chargeState                = status.chargeState,
+                    isScreenOn                 = false,
+                    sessionId                  = null,
+                    chargerVoltageMillivolts   = null,
+                    chargerCurrentMaxMilliamps = null,
+                    isPdActive                 = null,
+                    chargerType                = null,
+                    chargeProtocolLabel        = null
+                )
             )
-            repository.insertReading(reading)
 
-            maybeUpdateDischargeEvent(status)
-
+            updateOpenDischargeEvent(status)
+            sampleAppUsage()
             Result.success()
         } catch (_: Exception) {
+            // Sampling is best-effort; a failed run must not retry-storm.
             Result.success()
         }
     }
 
-    private suspend fun maybeUpdateDischargeEvent(status: BatteryStatus) {
-        val latestEvent = repository.getLatestDischargeEvent().first() ?: return
-        if (!latestEvent.isOpen) return
+    private suspend fun updateOpenDischargeEvent(status: BatteryStatus) {
+        val event = repository.getLatestOpenDischargeEvent() ?: return
 
-        repository.closeDischargeEvent(
-            eventId         = latestEvent.id,
-            endPercent      = status.percent,
-            endChargeCounter = status.chargeCounterUah.takeIf { it > 0 },
-            avgCurrentMicroAmps = status.currentUa.takeIf { it != 0 }
-        )
+        val averageCurrentUa = repository.updateDischargeProgress(
+            eventId          = event.id,
+            endPercent       = status.percent,
+            endChargeCounter = status.chargeCounterUah.takeIf { it > 0 }
+        ) ?: return
 
-        // Reopen with updated start values so the next poll has a fresh baseline.
-        repository.startDischargeEvent(
-            startPercent       = status.percent,
-            startChargeCounter = status.chargeCounterUah.takeIf { it > 0 }
-        )
-
-        checkAnomalousDrain(latestEvent.id, status)
+        // Judged on the mean draw across the whole event, not one instantaneous
+        // sample that a momentary spike could have inflated.
+        val averageMilliAmps = abs(averageCurrentUa) / 1000f
+        if (averageMilliAmps > ANOMALOUS_DRAIN_THRESHOLD_MA) {
+            repository.markDischargeEventAnomalous(event.id)
+        }
     }
 
-    // Marks the closed event anomalous if the discharge rate is unusually high.
-    private suspend fun checkAnomalousDrain(eventId: Long, status: BatteryStatus) {
-        val currentMa = kotlin.math.abs(status.currentUa) / 1000f
-        if (currentMa > ANOMALOUS_DRAIN_THRESHOLD_MA) {
-            repository.markDischargeEventAnomalous(eventId)
-        }
+    /**
+     * Records which apps held the foreground since the last sample, so drain can
+     * later be correlated against app use. Silently does nothing without usage
+     * access — the feature is optional and must never block battery sampling.
+     */
+    private suspend fun sampleAppUsage() {
+        if (!usageStatsReader.hasPermission()) return
+
+        val now = System.currentTimeMillis()
+        val lastSampled = repository.getLatestAppUsageTimestamp()
+        val windowStart = (lastSampled ?: (now - MAX_USAGE_WINDOW_MS))
+            .coerceAtLeast(now - MAX_USAGE_WINDOW_MS)
+        if (now - windowStart < MIN_USAGE_WINDOW_MS) return
+
+        val foregroundByPackage = usageStatsReader.foregroundTimeBetween(windowStart, now)
+        if (foregroundByPackage.isEmpty()) return
+
+        repository.insertAppUsageSamples(
+            foregroundByPackage.map { (packageName, foregroundMillis) ->
+                AppUsageEntity(
+                    timestamp            = now,
+                    packageName          = packageName,
+                    foregroundTimeMillis = foregroundMillis,
+                    windowStartTimestamp = windowStart,
+                    windowEndTimestamp   = now
+                )
+            }
+        )
     }
 
     private fun readBatteryStatus(): BatteryStatus {
@@ -90,12 +121,16 @@ class BatteryDataWorker @AssistedInject constructor(
             null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         )
 
-        val rawStatus = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        val chargeState = when (rawStatus) {
+        val chargeState = when (sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1) {
             BatteryManager.BATTERY_STATUS_FULL        -> ChargeState.FULL
             BatteryManager.BATTERY_STATUS_CHARGING    -> ChargeState.CHARGING
             BatteryManager.BATTERY_STATUS_DISCHARGING -> ChargeState.DISCHARGING
             else                                      -> ChargeState.NOT_CHARGING
+        }
+        val chargeSource = when (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) {
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> ChargeSource.WIRELESS
+            0                                       -> ChargeSource.NONE
+            else                                    -> ChargeSource.USB
         }
 
         return BatteryStatus(
@@ -104,7 +139,8 @@ class BatteryDataWorker @AssistedInject constructor(
             tempTenthsC      = sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0,
             chargeCounterUah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER),
             currentUa        = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW),
-            chargeState      = chargeState
+            chargeState      = chargeState,
+            chargeSource     = chargeSource
         )
     }
 
@@ -114,13 +150,17 @@ class BatteryDataWorker @AssistedInject constructor(
         val tempTenthsC: Int,
         val chargeCounterUah: Int,
         val currentUa: Int,
-        val chargeState: ChargeState
+        val chargeState: ChargeState,
+        val chargeSource: ChargeSource
     )
 
-    companion object {
-        const val WORK_NAME = "battery_discharge_polling"
+    private companion object {
+        // Sustained mean draw above this suggests something is misbehaving.
+        const val ANOMALOUS_DRAIN_THRESHOLD_MA = 1500f
 
-        // Flag a discharge event anomalous if instantaneous draw exceeds 1500 mA with screen off.
-        private const val ANOMALOUS_DRAIN_THRESHOLD_MA = 1500f
+        // Windows shorter than this carry too little signal; longer than this and
+        // a first run after a long gap would swamp every later sample.
+        const val MIN_USAGE_WINDOW_MS = 60_000L
+        const val MAX_USAGE_WINDOW_MS = 6 * 60 * 60 * 1000L
     }
 }

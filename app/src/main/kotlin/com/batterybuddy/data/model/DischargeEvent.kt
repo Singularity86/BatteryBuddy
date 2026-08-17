@@ -2,6 +2,7 @@ package com.batterybuddy.data.model
 
 data class DischargeEvent(
     val id: Long,
+    val batteryId: Long?,
     val startTimestamp: Long,
     val endTimestamp: Long?,
     val startPercent: Int,

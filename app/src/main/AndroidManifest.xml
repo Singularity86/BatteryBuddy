@@ -4,10 +4,17 @@
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- Required for foregroundServiceType="dataSync" on API 34+ -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!--
+        Battery sampling is not a data sync. The dataSync type is capped at 6
+        hours per day on Android 15+, which is exactly the overnight charge this
+        app exists to observe, so the service is declared as specialUse instead.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Optional — user must grant manually via Settings; runtime check required -->
+    <!--
+        Optional. Powers the app-use-during-drain correlation only; the user
+        grants it from system settings, and everything else works without it.
+    -->
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
@@ -21,7 +28,6 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
-        <!-- UI entry point — screen implementations added in UI phase -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
@@ -32,11 +38,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Foreground service for 2-minute polling while charging -->
+        <!-- Samples the battery while a charger is attached -->
         <service
             android:name=".service.BatteryPollingService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Samples battery voltage, current and temperature for the duration of a charge session so charge speed, heat exposure and capacity can be measured. Sampling must continue with the screen off and for the full length of an overnight charge." />
+        </service>
 
         <!-- Detects plug/unplug to start/stop the service and worker -->
         <receiver
