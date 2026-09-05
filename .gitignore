@@ -8,7 +8,6 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
-.claude/settings.local.json
 /build
 app/build/
 /captures
@@ -19,3 +18,5 @@ app/schemas/
 
 # Kotlin compiler daemon logs
 .kotlin/
+PLAN.md
+REVIEW.md

@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace  = "com.batterybuddy"
+    namespace  = "jibaro.etherdrive.reserve"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.batterybuddy"
+        applicationId = "jibaro.etherdrive.reserve"
         minSdk        = 26
         targetSdk     = 36
         versionCode   = 1
